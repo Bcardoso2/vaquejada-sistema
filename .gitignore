@@ -1,0 +1,7 @@
+.vercel
+node_modules/
+.next/
+remotion-showcase/
+vaquejada-showcase/
+brag-output/
+*.env
