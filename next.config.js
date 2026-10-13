@@ -7,6 +7,21 @@ const nextConfig = {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   },
   // Configurar headers de segurança
+
+  async rewrites() {
+    if (process.env.VERCEL === '1') {
+      return {
+        beforeFiles: [
+          {
+            source: '/api/:path*',
+            destination: 'https://vaquejada.67.205.190.178.nip.io/api/:path*',
+          },
+        ],
+      };
+    }
+    return [];
+  },
+
   async headers() {
     return [
       {
