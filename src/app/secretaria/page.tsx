@@ -28,7 +28,10 @@ export default function SecretariaPage() {
   const [loading, setLoading] = useState(false);
 
   // Form Venda de Senhas
-  const [tipoVenda, setTipoVenda] = useState<'KIT' | 'SOLTEIRA'>('KIT');
+  const [senhasDisponiveis, setSenhasDisponiveis] = useState<any[]>([]);
+  const [senhaCodigo, setSenhaCodigo] = useState('');
+  const [cavaloNome, setCavaloNome] = useState('');
+  const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'VALE'>('PIX');
   const [canalVenda, setCanalVenda] = useState<'PRESENCIAL' | 'ANTECIPADA'>('PRESENCIAL');
   const [puxadorNome, setPuxadorNome] = useState('');
   const [esteiraNome, setEsteiraNome] = useState('');
@@ -54,14 +57,43 @@ export default function SecretariaPage() {
     }
   };
 
+  const carregarSenhasDisponiveis = async () => {
+    try {
+      const res = await fetch('/api/senhas?limit=500');
+      const data = await res.json();
+      if (res.ok && Array.isArray(data)) {
+        const disponiveis = data
+          .filter((s: any) =>
+            s.vaquejada_id === 'vq-2026-portal' &&
+            s.estado_comercial === 'DISPONIVEL' &&
+            (s.faixa_senha === 'BAIXA' || s.faixa_senha === 'ALTA')
+          )
+          .sort((a: any, b: any) => Number(a.codigo) - Number(b.codigo));
+        setSenhasDisponiveis(disponiveis);
+        setSenhaCodigo((atual) =>
+          disponiveis.some((s: any) => s.codigo === atual)
+            ? atual
+            : (disponiveis[0]?.codigo || '')
+        );
+      }
+    } catch (err) {
+      console.error('Erro ao carregar senhas disponiveis:', err);
+    }
+  };
+
   useEffect(() => {
     carregarBoisOuro();
+    carregarSenhasDisponiveis();
   }, []);
 
   const handleEmitirVenda = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!puxadorNome.trim() || !esteiraNome.trim()) {
-      alert('Informe os nomes do puxador e do esteira');
+    if (!senhaCodigo || !puxadorNome.trim() || !esteiraNome.trim() || !cavaloNome.trim()) {
+      alert('Selecione uma senha e informe puxador, esteira e cavalo.');
+      return;
+    }
+    if (!['PIX', 'DINHEIRO', 'VALE'].includes(formaPagamento)) {
+      alert('Selecione a forma de pagamento.');
       return;
     }
 
@@ -71,12 +103,14 @@ export default function SecretariaPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tipoVenda,
+          senhaCodigo,
+          cavaloNome,
+          formaPagamento,
           canalVenda,
           puxadorNome,
           esteiraNome,
           categoria,
-          valorCentavos: valorVenda * 100,
+          valorCentavos: Math.round(valorVenda * 100),
         }),
       });
       const data = await res.json();
@@ -84,6 +118,8 @@ export default function SecretariaPage() {
         setRetornoVenda(data);
         setPuxadorNome('');
         setEsteiraNome('');
+        setCavaloNome('');
+        await carregarSenhasDisponiveis();
       } else {
         alert(data.error || 'Erro ao realizar venda');
       }
@@ -179,7 +215,7 @@ export default function SecretariaPage() {
             Secretaria & Emissão de Senhas
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Gestão de inscrições de kits, senhas individuais e liberação de Boi de Ouro
+            Gestão de senhas individuais, pagamentos e liberação de Boi de Ouro
           </p>
         </div>
       </div>
@@ -195,7 +231,7 @@ export default function SecretariaPage() {
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          Venda de Senhas (Kit & Solteira)
+          Venda de Senhas Individuais
         </button>
         <button
           type="button"
@@ -222,29 +258,33 @@ export default function SecretariaPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Modalidade da Senha
+                    Senha disponivel *
                   </label>
                   <select
-                    value={tipoVenda}
-                    onChange={(e) => {
-                      setTipoVenda(e.target.value as any);
-                      setValorVenda(e.target.value === 'KIT' ? 600 : 350);
-                    }}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    required
+                    value={senhaCodigo}
+                    onChange={(e) => setSenhaCodigo(e.target.value)}
+                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
                   >
-                    <option value="KIT">Kit (2 Senhas · 4 Bois na Pista)</option>
-                    <option value="SOLTEIRA">Senha Solteira (1 Senha · 2 Bois)</option>
+                    <option value="">Selecione o numero da senha</option>
+                    {senhasDisponiveis.map((s: any) => (
+                      <option key={s.id} value={s.codigo}>
+                        {s.codigo} - {s.faixa_senha === 'BAIXA' ? 'Senha baixa' : 'Senha alta'}
+                      </option>
+                    ))}
                   </select>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {senhasDisponiveis.length} senhas disponiveis no estoque
+                  </p>
                 </div>
-
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Canal de Venda
+                    Canal de venda
                   </label>
                   <select
                     value={canalVenda}
                     onChange={(e) => setCanalVenda(e.target.value as any)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
                   >
                     <option value="PRESENCIAL">Presencial (Secretaria no Parque)</option>
                     <option value="ANTECIPADA">Antecipada (Site / App)</option>
@@ -285,6 +325,37 @@ export default function SecretariaPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Nome do cavalo *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={cavaloNome}
+                    onChange={(e) => setCavaloNome(e.target.value)}
+                    placeholder="Nome do cavalo"
+                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Forma de pagamento *
+                  </label>
+                  <select
+                    required
+                    value={formaPagamento}
+                    onChange={(e) => setFormaPagamento(e.target.value as any)}
+                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
+                  >
+                    <option value="PIX">PIX</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                    <option value="VALE">Vale</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Categoria da Prova
                   </label>
                   <select
@@ -313,8 +384,9 @@ export default function SecretariaPage() {
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
-                <div>• O sistema gera <strong>senhas independentes</strong> com 2 bois alocados para cada senha.</div>
-                <div>• As oportunidades de corrida são automaticamente posicionadas na fila do <strong>Mapa da Pista</strong>.</div>
+                <div>• A secretaria seleciona uma senha previamente cadastrada no estoque.</div>
+                <div>• Cada senha registra puxador, esteira, cavalo e forma de pagamento.</div>
+                <div>• A venda confirmada aloca 2 bois no <strong>Mapa da Pista</strong>.</div>
               </div>
 
               <button
@@ -322,7 +394,7 @@ export default function SecretariaPage() {
                 disabled={loading}
                 className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition text-sm shadow-sm cursor-pointer"
               >
-                {loading ? 'Processando Emissão...' : `Confirmar Emissão (${tipoVenda})`}
+                {loading ? 'Processando venda...' : 'Confirmar venda da senha'}
               </button>
             </form>
           </div>
@@ -368,7 +440,7 @@ export default function SecretariaPage() {
               </div>
             ) : (
               <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 text-xs shadow-sm">
-                Preencha o formulário para emitir uma nova venda com geração automática de senhas e alocação na boiada.
+                Selecione uma senha disponível para registrar a venda e os dados da dupla.
               </div>
             )}
           </div>
