@@ -26,8 +26,29 @@ function request(options, body) {
   });
 }
 
+async function login(email, senha) {
+  const res = await request(
+    {
+      hostname: 'localhost',
+      port: 3099,
+      path: '/api/auth/login',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    { email, senha }
+  );
+  for (const c of res.headers['set-cookie'] || []) {
+    const match = c.match(/vaquejada_session=([^;]+)/);
+    if (match) return `vaquejada_session=${match[1]}`;
+  }
+  return '';
+}
+
 async function runTests() {
   console.log('=== INICIANDO BATERIA DE TESTES - BLOCO A ===\n');
+
+  const cookieAdmin = await login('admin@vaquejada.com', 'Admin@Vaquejada2026!');
+  const cookieSec = await login('secretaria@vaquejada.com', 'Secretaria@123');
 
   // Teste A4: Coluna cavalo_nome
   console.log('▶ Teste A4: Verificando coluna cavalo_nome no banco...');
@@ -72,7 +93,7 @@ async function runTests() {
       port: 3099,
       path: '/api/senhas',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: cookieSec },
     },
     {
       codigo: codDup2,
@@ -96,7 +117,7 @@ async function runTests() {
       port: 3099,
       path: '/api/senhas',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: cookieSec },
     },
     {
       codigo: codDup3,
@@ -134,7 +155,7 @@ async function runTests() {
     port: 3099,
     path: `/api/senhas?id=${senhaCancelId}`,
     method: 'DELETE',
-    headers: { 'x-user-role': 'ADMIN' },
+    headers: { Cookie: cookieAdmin },
   });
   if (resCancelExec.status === 409) {
     console.log('  ✅ Bloqueou cancelamento com corrida EM_EXECUCAO com 409 Conflict.');
@@ -151,7 +172,7 @@ async function runTests() {
     port: 3099,
     path: `/api/senhas?id=${senhaCancelId}`,
     method: 'DELETE',
-    headers: { 'x-user-role': 'SECRETARIA' },
+    headers: { Cookie: cookieSec },
   });
   if (resCancelNoAdmin.status === 403) {
     console.log('  ✅ Bloqueou cancelamento de corrida CONCLUIDA para perfil não-ADMIN com 403 Forbidden.');
@@ -165,7 +186,7 @@ async function runTests() {
     port: 3099,
     path: `/api/senhas?id=${senhaCancelId}`,
     method: 'DELETE',
-    headers: { 'x-user-role': 'ADMIN' },
+    headers: { Cookie: cookieAdmin },
   });
   if (resCancelNoMotivo.status === 400) {
     console.log('  ✅ Bloqueou cancelamento de corrida CONCLUIDA como ADMIN quando motivo não foi informado (400 Bad Request).');
@@ -180,8 +201,9 @@ async function runTests() {
     port: 3099,
     path: `/api/senhas?id=${senhaCancelId}&motivo=${motivoValido}`,
     method: 'DELETE',
-    headers: { 'x-user-role': 'ADMIN' },
+    headers: { Cookie: cookieAdmin },
   });
+  console.log('  [DEBUG A2.3] status:', resCancelAdminOk.status, 'body:', resCancelAdminOk.body);
   if (resCancelAdminOk.status === 200) {
     console.log('  ✅ Permitiu cancelamento com corrida CONCLUIDA para ADMIN com motivo registrado (200 OK).');
   } else {
@@ -197,6 +219,7 @@ async function runTests() {
     port: 3099,
     path: '/api/financeiro',
     method: 'GET',
+    headers: { Cookie: cookieAdmin },
   });
   if (resFin.status === 200 && resFin.body.resumo) {
     const { totalBrutoRecebidoCentavos, totalEstornadoCentavos, saldoLiquidoCentavos } = resFin.body.resumo;

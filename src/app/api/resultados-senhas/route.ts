@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
-import { validateRolePermission, validateUser } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
+import { registrarAuditoria } from '../../../lib/audit';
 
-// GET /api/resultados-senhas - Listar resultados (opcionalmente filtrado por senha ou vaquejada)
+// GET /api/resultados-senhas - Listar resultados (Qualquer perfil autenticado)
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const senhaId = searchParams.get('senhaId');
@@ -47,26 +51,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/resultados-senhas - Registrar resultado de uma senha (decisão do juiz)
+// POST /api/resultados-senhas - Registrar resultado de uma senha (decisão do juiz ou admin)
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['JUIZ']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas JUIZ pode registrar resultados)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['JUIZ']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
-    // Validar se o usuário existe e está ativo
-    // Se userId for null, passar string vazia para evitar erro de tipo
-    const userIdValue = userId !== null ? userId : '';
-    const userValidation = await validateUser(userIdValue);
-    if (!userValidation.isValid) {
-      return userValidation.response;
-    }
-
     const {
       senhaId,
       vaquejadaId,
@@ -80,7 +70,6 @@ export async function POST(request: NextRequest) {
       videoContestacaoUrl
     } = await request.json();
 
-    // Validações básicas
     if (!senhaId || !vaquejadaId) {
       return NextResponse.json(
         { error: 'ID da senha e ID da vaquejada são obrigatórios' },
@@ -88,7 +77,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se a senha existe
     const senhaCheck = await query('SELECT id FROM senhas WHERE id = $1', [senhaId]);
     if (senhaCheck.rows.length === 0) {
       return NextResponse.json(
@@ -97,7 +85,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se a vaquejada existe
     const vaquejadaCheck = await query('SELECT id FROM vaquejadas WHERE id = $1', [vaquejadaId]);
     if (vaquejadaCheck.rows.length === 0) {
       return NextResponse.json(
@@ -106,7 +93,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se a senha já tem um resultado registrado para esta vaquejada
     const existingResult = await query(
       'SELECT id FROM resultados_senhas WHERE senha_id = $1 AND vaquejada_id = $2',
       [senhaId, vaquejadaId]
@@ -136,17 +122,27 @@ export async function POST(request: NextRequest) {
         boi2Desclassificado,
         motivoDesclassificaoBoi1,
         motivoDesclassificaoBoi2,
-        userId, // O juiz que está fazendo a decisão (será null se não fornecido, mas já validamos acima)
+        auth.session.id,
         observacoesJuiz,
         videoContestacaoUrl
       ]
     );
 
-    // Marcar a senha como usada
     await query(
       'UPDATE senhas SET status = $1, usada_em = CURRENT_TIMESTAMP WHERE id = $2',
       ['USADA', senhaId]
     );
+
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'JULGAR_SENHA',
+      entidade: 'resultados_senhas',
+      entidadeId: res.rows[0].id,
+      detalhes: { senhaId, vaquejadaId, boi1Nota, boi2Nota },
+      motivo: 'Registro de julgamento de senha'
+    });
 
     return NextResponse.json(res.rows[0], { status: 201 });
   } catch (error) {

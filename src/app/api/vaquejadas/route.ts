@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
-import { validateRolePermission } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
+import { registrarAuditoria } from '../../../lib/audit';
 
-// GET /api/vaquejadas - Listar vaquejadas
+// GET /api/vaquejadas - Listar vaquejadas (ADMIN)
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
@@ -32,29 +36,21 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/vaquejadas - Criar nova vaquejada
+// POST /api/vaquejadas - Criar nova vaquejada (Exclusivo ADMIN)
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas ADMIN e SECRETARIO podem criar vaquejadas)
-    // Em um cenário real, obteríamos o usuário do token JWT ou sessão
-    // Por agora, vamos assumir que o header contém o userId para simplificação
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['ADMIN', 'SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const {
       codigo,
       nome,
       data_inicio,
       data_fim,
-      local
+      local,
+      permitir_dupla_multiplas_senhas = true,
     } = await request.json();
 
-    // Validações básicas
     if (!codigo || !nome || !data_inicio || !data_fim) {
       return NextResponse.json(
         { error: 'Código, nome, data de início e data de fim são obrigatórios' },
@@ -63,14 +59,31 @@ export async function POST(request: NextRequest) {
     }
 
     const res = await query(
-      `INSERT INTO vaquejadas (codigo, nome, data_inicio, data_fim, local)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO vaquejadas (id, codigo, nome, data_inicio, data_fim, local, permitir_dupla_multiplas_senhas)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [codigo, nome, data_inicio, data_fim, local]
+      [`vq-${codigo.toLowerCase().trim()}`, codigo.toUpperCase().trim(), nome.trim(), data_inicio, data_fim, local, permitir_dupla_multiplas_senhas]
     );
 
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'CRIAR_VAQUEJADA',
+      entidade: 'vaquejadas',
+      entidadeId: res.rows[0].id,
+      detalhes: res.rows[0],
+      motivo: 'Cadastro de novo evento de vaquejada'
+    });
+
     return NextResponse.json(res.rows[0], { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Já existe uma vaquejada cadastrada com este código.' },
+        { status: 409 }
+      );
+    }
     console.error('Erro ao criar vaquejada:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },

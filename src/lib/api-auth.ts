@@ -1,35 +1,72 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { obterSessaoDoRequest, UserRole, UserSession } from './auth';
 import { query } from './db';
 
-export type UserRole = 'ADMIN' | 'SECRETARIO' | 'JUIZ' | 'OPERADOR';
+export type { UserRole, UserSession };
 
 /**
- * Valida se o usuário possui autorização para a ação solicitada
+ * Matriz de Permissões Canônica do Sistema:
+ * - ADMIN: Acesso irrestrito a todas as rotas e operações.
+ * - SECRETARIA: Senhas (venda, listagem, cancelamento), Kits, Financeiro/Caixa.
+ * - OPERADOR_PISTA: Apenas /mapa, chamar boi, iniciar corrida, resultado da pista.
+ * - JUIZ: Apenas /juiz e Boi de TV (decisões e contestações).
  */
-export function validateRolePermission(
-  role: string | null | undefined,
-  allowedRoles: UserRole[]
-) {
-  // Se não especificado em ambiente de dev/seed interno, assume ADMIN
-  const effectiveRole = (role as UserRole) || 'ADMIN';
+export const MATRIZ_PERMISSOES = {
+  SECRETARIA: ['ADMIN', 'SECRETARIA'] as UserRole[],
+  OPERADOR_PISTA: ['ADMIN', 'OPERADOR_PISTA'] as UserRole[],
+  JUIZ: ['ADMIN', 'JUIZ'] as UserRole[],
+  ADMIN_SOMENTE: ['ADMIN'] as UserRole[],
+  QUALQUER_AUTENTICADO: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] as UserRole[],
+};
 
-  if (!allowedRoles.includes(effectiveRole)) {
+/**
+ * Exige que a requisição possua uma sessão válida no servidor.
+ * NUNCA confia em headers enviados pelo cliente (ex: x-user-role).
+ * Retorna 401 se sem sessão, ou 403 se o perfil não tiver permissão.
+ */
+export async function exigirSessao(
+  request: NextRequest | Request,
+  allowedRoles?: UserRole[]
+): Promise<
+  | { autorizado: true; session: UserSession }
+  | { autorizado: false; response: NextResponse }
+> {
+  const session = await obterSessaoDoRequest(request);
+
+  if (!session) {
     return {
-      isAuthorized: false,
+      autorizado: false,
       response: NextResponse.json(
-        {
-          error: `Acesso negado: Perfil "${effectiveRole}" não possui autorização para esta operação.`,
-        },
-        { status: 403 }
+        { error: 'Não autenticado: Sessão inválida ou expirada. Faça login para acessar o sistema.' },
+        { status: 401 }
       ),
     };
   }
 
-  return { isAuthorized: true, effectiveRole };
+  // ADMIN sempre tem acesso a tudo
+  if (session.papel === 'ADMIN') {
+    return { autorizado: true, session };
+  }
+
+  if (allowedRoles && allowedRoles.length > 0) {
+    if (!allowedRoles.includes(session.papel)) {
+      return {
+        autorizado: false,
+        response: NextResponse.json(
+          {
+            error: `Acesso negado: Perfil "${session.papel}" não possui autorização para esta operação. Permissões necessárias: [${allowedRoles.join(', ')}].`,
+          },
+          { status: 403 }
+        ),
+      };
+    }
+  }
+
+  return { autorizado: true, session };
 }
 
 /**
- * Busca usuário por ID e valida se está ativo
+ * Helper para validar se o usuário existe e está ativo no banco
  */
 export async function validateUser(userId: string) {
   if (!userId || typeof userId !== 'string') {

@@ -1,10 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { exigirSessao } from '@/lib/api-auth';
 
-export async function GET() {
+// GET /api/auditoria - Listar logs de auditoria (Exclusivo ADMIN)
+export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const res = await query(
-      `SELECT * FROM audit_logs ORDER BY criado_em DESC LIMIT 100`
+      `SELECT * FROM audit_logs ORDER BY criado_em DESC LIMIT 150`
     );
     return NextResponse.json(res.rows);
   } catch (error) {

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
-import { validateRolePermission } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
+import { registrarAuditoria } from '../../../lib/audit';
 
-// GET /api/bois - Listar bois
+// GET /api/bois - Listar bois (ADMIN)
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const categoria = searchParams.get('categoria');
@@ -32,18 +36,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/bois - Criar novo boi
+// POST /api/bois - Criar novo boi (Exclusivo ADMIN)
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas ADMIN e SECRETARIO podem criar bois)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['ADMIN', 'SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const {
       numeroRegistro,
       nome,
@@ -53,7 +51,6 @@ export async function POST(request: NextRequest) {
       observacoes
     } = await request.json();
 
-    // Validações básicas
     if (!numeroRegistro || !nome) {
       return NextResponse.json(
         { error: 'Numero de registro e nome são obrigatórios' },
@@ -70,8 +67,25 @@ export async function POST(request: NextRequest) {
       [numeroRegistro, nome, categoria, pesoKg, cor, observacoes]
     );
 
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'CRIAR_BOI',
+      entidade: 'bois',
+      entidadeId: res.rows[0].id,
+      detalhes: res.rows[0],
+      motivo: 'Cadastro de novo animal na boiada'
+    });
+
     return NextResponse.json(res.rows[0], { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Já existe um boi cadastrado com este número de registro.' },
+        { status: 409 }
+      );
+    }
     console.error('Erro ao criar boi:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
@@ -80,18 +94,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT /api/bois - Atualizar boi
+// PUT /api/bois - Atualizar boi (Exclusivo ADMIN)
 export async function PUT(request: NextRequest) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas ADMIN e SECRETARIO podem atualizar bois)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['ADMIN', 'SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const body = await request.json();
     const id = body.id || request.nextUrl.searchParams.get('id');
 
@@ -108,7 +116,6 @@ export async function PUT(request: NextRequest) {
       observacoes
     } = body;
 
-    // Verificar se o boi existe
     const boiCheck = await query('SELECT id FROM bois WHERE id = $1', [id]);
     if (boiCheck.rows.length === 0) {
       return NextResponse.json(
@@ -125,8 +132,25 @@ export async function PUT(request: NextRequest) {
       [numeroRegistro, nome, categoria, pesoKg, cor, observacoes, id]
     );
 
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'ATUALIZAR_BOI',
+      entidade: 'bois',
+      entidadeId: id,
+      detalhes: res.rows[0],
+      motivo: 'Atualização de cadastro de animal'
+    });
+
     return NextResponse.json(res.rows[0]);
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Já existe outro boi com este número de registro.' },
+        { status: 409 }
+      );
+    }
     console.error('Erro ao atualizar boi:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },

@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { registrarAuditoria } from '@/lib/audit';
+import { exigirSessao } from '@/lib/api-auth';
 import crypto from 'crypto';
 
 const uuidv4 = () => crypto.randomUUID();
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const senhasRes = await query(
       `SELECT id, codigo, puxador_nome, esteira_nome, categoria, tipo_venda, canal_venda, 
@@ -79,6 +83,9 @@ export async function GET() {
 
 // POST /api/financeiro - Registrar pagamento manual, baixa ou estorno
 export async function POST(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
     const { 
@@ -89,8 +96,10 @@ export async function POST(request: Request) {
       valorCentavos, 
       referencia, 
       motivo,
-      operadorNome = 'Operador Financeiro' 
     } = body;
+    const operadorNome = auth.session.nome;
+    const papel = auth.session.papel;
+    const usuarioId = auth.session.id;
 
     // Fluxo de ESTORNO manual
     if (acao === 'ESTORNO') {
@@ -137,8 +146,9 @@ export async function POST(request: Request) {
       }
 
       await registrarAuditoria({
+        usuarioId,
         usuarioNome: operadorNome,
-        papel: 'FINANCEIRO',
+        papel,
         acao: 'ESTORNO_PAGAMENTO_REGISTRADO',
         entidade: 'pagamentos',
         entidadeId: resUpdate.rows[0].id,
@@ -174,8 +184,9 @@ export async function POST(request: Request) {
     );
 
     await registrarAuditoria({
+      usuarioId,
       usuarioNome: operadorNome,
-      papel: 'FINANCEIRO',
+      papel,
       acao: 'PAGAMENTO_REGISTRADO_MANUAL',
       entidade: 'pagamentos',
       entidadeId: id,

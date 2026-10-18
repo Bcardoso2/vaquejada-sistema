@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { registrarAuditoria } from '@/lib/audit';
+import { exigirSessao } from '@/lib/api-auth';
 import crypto from 'crypto';
 
 const uuidv4 = () => crypto.randomUUID();
 
-// GET /api/mapa - Lista a ordem de corridas e o mapa geral
+// GET /api/mapa - Lista a ordem de corridas e o mapa geral (OPERADOR_PISTA e ADMIN)
 export async function GET(request: Request) {
+  const auth = await exigirSessao(request, ['OPERADOR_PISTA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const vaquejadaId = searchParams.get('vaquejadaId') || 'vq-2026-portal';
@@ -38,9 +42,15 @@ export async function GET(request: Request) {
 
 // POST /api/mapa - Atualiza status da corrida ou registra resultado operacional (RN-03, RN-07)
 export async function POST(request: Request) {
+  const auth = await exigirSessao(request, ['OPERADOR_PISTA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
-    const { acao, corridaId, resultado, operadorNome, motivoExcecao } = body;
+    const { acao, corridaId, resultado, motivoExcecao } = body;
+    const operadorNome = auth.session.nome;
+    const papel = auth.session.papel;
+    const usuarioId = auth.session.id;
 
     if (!corridaId) {
       return NextResponse.json({ error: 'ID da corrida é obrigatório' }, { status: 400 });
@@ -56,8 +66,9 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
-        usuarioNome: operadorNome || 'Operador da Pista',
-        papel: 'OPERADOR',
+        usuarioId,
+        usuarioNome: operadorNome,
+        papel,
         acao: 'CHAMADA_PISTA',
         entidade: 'corridas_mapa',
         entidadeId: corridaId,
@@ -77,6 +88,17 @@ export async function POST(request: Request) {
         [corridaId]
       );
 
+      await registrarAuditoria({
+        usuarioId,
+        usuarioNome: operadorNome,
+        papel,
+        acao: 'INICIAR_CORRIDA',
+        entidade: 'corridas_mapa',
+        entidadeId: corridaId,
+        detalhes: { acao: 'INICIAR' },
+        motivo: 'Boi liberado e corrida iniciada na pista'
+      });
+
       return NextResponse.json({ success: true, estado: 'EM_EXECUCAO' });
     }
 
@@ -94,7 +116,6 @@ export async function POST(request: Request) {
       const c = corridaOrig.rows[0];
 
       if (resultado === 'RETORNO') {
-        // RN-03: "O retorno significa nova oportunidade com outro boi, vinculada à corrida original; nunca apagar a corrida original."
         // 1. Atualizar corrida original para AGUARDANDO_RETORNO
         await query(
           `UPDATE corridas_mapa 
@@ -128,8 +149,9 @@ export async function POST(request: Request) {
         );
 
         await registrarAuditoria({
-          usuarioNome: operadorNome || 'Operador da Pista',
-          papel: 'OPERADOR',
+          usuarioId,
+          usuarioNome: operadorNome,
+          papel,
           acao: 'RETORNO_REGISTRADO',
           entidade: 'corridas_mapa',
           entidadeId: corridaId,
@@ -154,8 +176,9 @@ export async function POST(request: Request) {
         );
 
         await registrarAuditoria({
-          usuarioNome: operadorNome || 'Operador da Pista',
-          papel: 'OPERADOR',
+          usuarioId,
+          usuarioNome: operadorNome,
+          papel,
           acao: 'RESULTADO_PISTA',
           entidade: 'corridas_mapa',
           entidadeId: corridaId,
@@ -181,8 +204,9 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
-        usuarioNome: operadorNome || 'Secretaria',
-        papel: 'SECRETARIO',
+        usuarioId,
+        usuarioNome: operadorNome,
+        papel,
         acao: 'EXCECAO_MAPA_AUTORIZADA',
         entidade: 'corridas_mapa',
         entidadeId: corridaId,

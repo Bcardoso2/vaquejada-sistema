@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
+import { UserNav } from '@/components/UserNav';
 
 export const metadata: Metadata = {
   title: {
@@ -29,6 +30,7 @@ const NAV_CADASTROS = [
   { href: '/bois', rotulo: 'Boiada', descricao: 'Bois e registros' },
   { href: '/senhas', rotulo: 'Senhas', descricao: 'Estoque e inscrições' },
   { href: '/vaquejadas', rotulo: 'Eventos', descricao: 'Circuito e provas' },
+  { href: '/usuarios', rotulo: 'Usuários & Perfis', descricao: 'Acesso e operadores (ADMIN)' },
 ];
 
 const linkDesktop =
@@ -73,13 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               {/* Direita */}
               <div className="flex items-center gap-3">
-                <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-400/30 rounded-full text-xs font-semibold text-emerald-300">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                  </span>
-                  Circuito 2026 ativo
-                </div>
+                <UserNav />
 
                 {/* Menu suspenso de cadastros (só CSS: abre com mouse ou foco do teclado) */}
                 <div className="hidden lg:block relative group">

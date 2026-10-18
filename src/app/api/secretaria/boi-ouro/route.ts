@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { registrarAuditoria } from '@/lib/audit';
+import { exigirSessao } from '@/lib/api-auth';
 import crypto from 'crypto';
 
 const uuidv4 = () => crypto.randomUUID();
 
 // GET /api/secretaria/boi-ouro - Lista solicitações de Boi de Ouro
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const res = await query(
       `SELECT 
@@ -31,9 +35,15 @@ export async function GET() {
 
 // POST /api/secretaria/boi-ouro - Solicitar, confirmar pagamento e autorizar Boi de Ouro (RN-05, RN-06, CA-11 a CA-14)
 export async function POST(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
-    const { acao, senhaOrigemId, boiId, vaquejadaId = 'vq-2026-portal', boiOuroId, referenciaPagamento, usuarioPapel = 'SECRETARIO', usuarioNome = 'Secretaria Geral' } = body;
+    const { acao, senhaOrigemId, boiId, vaquejadaId = 'vq-2026-portal', boiOuroId, referenciaPagamento } = body;
+    const usuarioNome = auth.session.nome;
+    const usuarioPapel = auth.session.papel;
+    const usuarioId = auth.session.id;
 
     // 1. Solicitar Boi de Ouro (RN-05)
     if (acao === 'SOLICITAR') {
@@ -41,7 +51,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Senha de origem é obrigatória' }, { status: 400 });
       }
 
-      // Buscar boi especial ou sortear boi da vaquejada
       const boiAlvo = boiId || 'boi-ouro-01';
       const id = `bdo-${uuidv4().slice(0, 8)}`;
 
@@ -53,6 +62,7 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
+        usuarioId,
         usuarioNome,
         papel: usuarioPapel,
         acao: 'SOLICITACAO_BOI_OURO',
@@ -85,6 +95,7 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
+        usuarioId,
         usuarioNome,
         papel: usuarioPapel,
         acao: 'PAGAMENTO_BOI_OURO_CONFIRMADO',
@@ -103,32 +114,22 @@ export async function POST(request: Request) {
 
     // 3. Autorização Exclusiva da Secretaria (RN-06, CA-11, CA-13, CA-14)
     if (acao === 'AUTORIZAR_SECRETARIA') {
-      // CA-14: Operador tenta aprovar -> API rejeita por permissão insuficiente!
-      if (usuarioPapel !== 'SECRETARIO' && usuarioPapel !== 'ADMIN') {
-        return NextResponse.json({ 
-          error: 'Permissão insuficiente. Somente o perfil de SECRETARIA ou ADMIN pode autorizar boi de ouro no mapa.' 
-        }, { status: 403 });
-      }
-
       const boRes = await query('SELECT * FROM bois_ouro WHERE id = $1', [boiOuroId]);
       if (boRes.rows.length === 0) {
         return NextResponse.json({ error: 'Boi de ouro não encontrado' }, { status: 404 });
       }
       const bdo = boRes.rows[0];
 
-      // CA-11: Boi de ouro não pago não pode ser liberado no mapa!
       if (!bdo.pago) {
         return NextResponse.json({ 
           error: 'Boi de ouro não pode ser liberado no mapa sem pagamento confirmado (CA-11).' 
         }, { status: 400 });
       }
 
-      // Impedir duplicidade no mapa (Seção 3.4)
       if (bdo.ativo || bdo.corrida_gerada_id) {
         return NextResponse.json({ error: 'Este boi de ouro já foi incluído no mapa anteriormente.' }, { status: 400 });
       }
 
-      // Inserir no mapa geral (CA-13)
       const maxOrdemRes = await query(
         'SELECT COALESCE(MAX(ordem_mapa), 0) + 1 as prox_ordem FROM corridas_mapa WHERE vaquejada_id = $1',
         [bdo.vaquejada_id]
@@ -143,7 +144,6 @@ export async function POST(request: Request) {
         [corridaId, bdo.vaquejada_id, bdo.senha_origem_id, bdo.boi_id, proxOrdem]
       );
 
-      // Atualizar status do Boi de Ouro
       await query(
         `UPDATE bois_ouro 
          SET estado = 'NO_MAPA', ativo = true, autorizado_por = $1, autorizado_em = CURRENT_TIMESTAMP, corrida_gerada_id = $2 
@@ -152,6 +152,7 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
+        usuarioId,
         usuarioNome,
         papel: usuarioPapel,
         acao: 'AUTORIZACAO_BOI_OURO_MAPA',

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { exigirSessao } from '@/lib/api-auth';
 import { registrarAuditoria } from '@/lib/audit';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-// PUT /api/oportunidades/[id] - Atualiza dados da oportunidade
+// PUT /api/oportunidades/[id] - Atualiza dados da oportunidade (Exclusivo ADMIN)
 export async function PUT(request: NextRequest, context: RouteContext) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { id } = await context.params;
     const body = await request.json();
@@ -41,8 +45,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     );
 
     await registrarAuditoria({
-      usuarioNome: 'Gestor de Pista',
-      papel: 'OPERADOR',
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
       acao: 'ATUALIZAR_OPORTUNIDADE',
       entidade: 'oportunidades',
       entidadeId: id,
@@ -57,8 +62,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   }
 }
 
-// DELETE /api/oportunidades/[id] - Exclui oportunidade
+// DELETE /api/oportunidades/[id] - Exclui oportunidade (Exclusivo ADMIN)
 export async function DELETE(request: NextRequest, context: RouteContext) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { id } = await context.params;
 
@@ -74,8 +82,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     await query('DELETE FROM oportunidades WHERE id = $1', [id]);
 
     await registrarAuditoria({
-      usuarioNome: 'Gestor de Pista',
-      papel: 'OPERADOR',
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
       acao: 'EXCLUIR_OPORTUNIDADE',
       entidade: 'oportunidades',
       entidadeId: id,

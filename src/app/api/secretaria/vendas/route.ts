@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { registrarAuditoria } from '@/lib/audit';
+import { exigirSessao } from '@/lib/api-auth';
 import crypto from 'crypto';
 
 // GET /api/secretaria/vendas - Lista senhas disponíveis para venda na secretaria
 export async function GET(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const vaquejadaId = searchParams.get('vaquejadaId') || 'vq-2026-portal';
@@ -50,6 +54,9 @@ export async function GET(request: Request) {
 
 // POST /api/secretaria/vendas - Realiza venda de senha ou kit completo com validações
 export async function POST(request: Request) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   const client = await pool.connect();
 
   try {
@@ -71,7 +78,7 @@ export async function POST(request: Request) {
     const categoria = String(body.categoria || 'PROFISSIONAL').trim().toUpperCase();
     const canalVenda = body.canalVenda === 'ANTECIPADA' ? 'ANTECIPADA' : 'PRESENCIAL';
     const formaPagamento = String(body.formaPagamento || 'PIX').toUpperCase();
-    const secretarioNome = String(body.secretarioNome || 'Secretaria Geral').trim();
+    const secretarioNome = auth.session.nome;
     const vaquejadaId = String(body.vaquejadaId || 'vq-2026-portal').trim();
     const valorCentavosInformado = Number(body.valorCentavos);
 
@@ -322,8 +329,9 @@ export async function POST(request: Request) {
 
     // 7. Log de Auditoria
     await registrarAuditoria({
-      usuarioNome: secretarioNome,
-      papel: 'SECRETARIO',
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
       acao: senhasVendidas.length > 1 ? 'VENDA_KIT_SENHAS' : 'VENDA_SENHA_AVULSA',
       entidade: 'senhas',
       entidadeId: senhasVendidas[0].id,

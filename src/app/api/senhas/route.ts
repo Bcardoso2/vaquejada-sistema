@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query, pool } from '../../../lib/db';
-import { validateRolePermission } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
 import { registrarAuditoria } from '../../../lib/audit';
 
 // GET /api/senhas - Listar senhas com detalhes operacionais e de vaqueiros
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
   try {
     const { searchParams } = new URL(request.url);
     const kitId = searchParams.get('kitId');
@@ -77,6 +79,9 @@ export async function GET(request: NextRequest) {
 
 // POST /api/senhas - Criar nova senha avulsa ou associada
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
     const { 
@@ -188,6 +193,9 @@ export async function POST(request: NextRequest) {
 
 // PUT /api/senhas - Atualizar dados operacionais da senha (Vaqueiros, Bois, Categoria, Status)
 export async function PUT(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
     const id = body.id || new URL(request.url).searchParams.get('id');
@@ -283,11 +291,15 @@ export async function PUT(request: NextRequest) {
 
 // DELETE /api/senhas - Cancelamento com transação, validação de pista e auditoria
 export async function DELETE(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   const motivo = searchParams.get('motivo');
-  const operadorNome = searchParams.get('operadorNome') || request.headers.get('x-user-nome') || 'Gestor Operacional';
-  const role = (request.headers.get('x-user-role') || searchParams.get('role') || 'SECRETARIA').toUpperCase();
+  const operadorNome = auth.session.nome;
+  const role = auth.session.papel;
+  const usuarioId = auth.session.id;
 
   if (!id) {
     return NextResponse.json({ error: 'ID da senha é obrigatório' }, { status: 400 });
@@ -385,6 +397,7 @@ export async function DELETE(request: NextRequest) {
 
     // 4. Registrar na auditoria
     await registrarAuditoria({
+      usuarioId,
       usuarioNome: operadorNome,
       papel: role,
       acao: temCorridaConcluida ? 'CANCELAR_SENHA_COM_CORRIDA_CONCLUIDA' : 'CANCELAR_SENHA_COM_MAPA',

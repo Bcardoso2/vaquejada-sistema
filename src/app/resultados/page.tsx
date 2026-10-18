@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { avaliarClassificacaoDupla } from '@/lib/regras-competicao';
 
 interface CorridaItem {

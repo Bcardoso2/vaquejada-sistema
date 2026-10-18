@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
-import { validateRolePermission } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
+import { registrarAuditoria } from '../../../lib/audit';
 
-// GET /api/bois-ouro - Listar bois de ouro (opcionalmente filtrado por vaquejada)
+// GET /api/bois-ouro - Listar bois de ouro (SECRETARIA e ADMIN)
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const vaquejadaId = searchParams.get('vaquejadaId');
@@ -47,25 +51,18 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/bois-ouro - Registrar novo boi de ouro
+// POST /api/bois-ouro - Registrar novo boi de ouro (SECRETARIA e ADMIN)
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas ADMIN e SECRETARIO podem registrar bois de ouro)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['ADMIN', 'SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const {
       boiId,
       vaquejadaId,
       valor
     } = await request.json();
 
-    // Validações básicas
     if (!boiId || !vaquejadaId || !valor) {
       return NextResponse.json(
         { error: 'ID do boi, ID da vaquejada e valor são obrigatórios' },
@@ -73,7 +70,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se o boi existe
     const boiCheck = await query('SELECT id FROM bois WHERE id = $1', [boiId]);
     if (boiCheck.rows.length === 0) {
       return NextResponse.json(
@@ -82,7 +78,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se a vaquejada existe
     const vaquejadaCheck = await query('SELECT id FROM vaquejadas WHERE id = $1', [vaquejadaId]);
     if (vaquejadaCheck.rows.length === 0) {
       return NextResponse.json(
@@ -91,7 +86,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se já existe um boi de ouro registrado para este boi nesta vaquejada
     const existingCheck = await query(
       'SELECT id FROM bois_ouro WHERE boi_id = $1 AND vaquejada_id = $2',
       [boiId, vaquejadaId]
@@ -110,6 +104,17 @@ export async function POST(request: NextRequest) {
       [boiId, vaquejadaId, valor]
     );
 
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'CRIAR_BOI_OURO',
+      entidade: 'bois_ouro',
+      entidadeId: res.rows[0].id,
+      detalhes: res.rows[0],
+      motivo: 'Registro de novo boi de ouro'
+    });
+
     return NextResponse.json(res.rows[0], { status: 201 });
   } catch (error) {
     console.error('Erro ao registrar boi de ouro:', error);
@@ -120,18 +125,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT /api/bois-ouro - Confirmar pagamento ou autorizar boi de ouro
+// PUT /api/bois-ouro - Confirmar pagamento ou autorizar boi de ouro (SECRETARIA e ADMIN)
 export async function PUT(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas SECRETARIO pode confirmar/autorizar)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const body = await request.json().catch(() => ({}));
     const id = body.id || request.nextUrl.searchParams.get('id');
     const acao = body.acao || (request.nextUrl.searchParams.get('acao') || 'PAGAR');
@@ -140,7 +139,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID do boi de ouro é obrigatório' }, { status: 400 });
     }
 
-    // Verificar se o boi de ouro existe
     const boiOuROCheck = await query('SELECT * FROM bois_ouro WHERE id = $1', [id]);
     if (boiOuROCheck.rows.length === 0) {
       return NextResponse.json(
@@ -164,8 +162,18 @@ export async function PUT(request: NextRequest) {
          SET ativo = true, autorizado_por = $1, autorizado_em = CURRENT_TIMESTAMP
          WHERE id = $2
          RETURNING *`,
-        [userId, id]
+        [auth.session.id, id]
       );
+
+      await registrarAuditoria({
+        usuarioId: auth.session.id,
+        usuarioNome: auth.session.nome,
+        papel: auth.session.papel,
+        acao: 'AUTORIZAR_BOI_OURO',
+        entidade: 'bois_ouro',
+        entidadeId: id,
+        motivo: 'Autorização de boi de ouro'
+      });
 
       return NextResponse.json(res.rows[0]);
     } else {
@@ -177,6 +185,16 @@ export async function PUT(request: NextRequest) {
          RETURNING *`,
         [id]
       );
+
+      await registrarAuditoria({
+        usuarioId: auth.session.id,
+        usuarioNome: auth.session.nome,
+        papel: auth.session.papel,
+        acao: 'PAGAR_BOI_OURO',
+        entidade: 'bois_ouro',
+        entidadeId: id,
+        motivo: 'Pagamento de boi de ouro'
+      });
 
       return NextResponse.json(res.rows[0]);
     }

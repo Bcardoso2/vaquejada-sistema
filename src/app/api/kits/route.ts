@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '../../../lib/db';
-import { validateRolePermission } from '../../../lib/api-auth';
+import { exigirSessao } from '../../../lib/api-auth';
+import { registrarAuditoria } from '../../../lib/audit';
 
-// GET /api/kits - Listar kits (opcionalmente filtrado por vaquejada)
+// GET /api/kits - Listar kits (SECRETARIA e ADMIN)
 export async function GET(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { searchParams } = new URL(request.url);
     const vaquejadaId = searchParams.get('vaquejadaId');
@@ -32,21 +36,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/kits - Criar novo kit
+// POST /api/kits - Criar novo kit (SECRETARIA e ADMIN)
 export async function POST(request: NextRequest) {
+  const auth = await exigirSessao(request, ['SECRETARIA']);
+  if (!auth.autorizado) return auth.response;
+
   try {
-    // Verificar autorização (apenas ADMIN e SECRETARIO podem criar kits)
-    const userId = request.headers.get('x-user-id');
-    const userRole = request.headers.get('x-user-role') as any;
-
-    const permissionCheck = validateRolePermission(userRole, ['ADMIN', 'SECRETARIO']);
-    if (!permissionCheck.isAuthorized) {
-      return permissionCheck.response;
-    }
-
     const { vaquejadaId, codigo } = await request.json();
 
-    // Validações básicas
     if (!vaquejadaId || !codigo) {
       return NextResponse.json(
         { error: 'ID da vaquejada e código são obrigatórios' },
@@ -54,7 +51,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se a vaquejada existe
     const vaquejadaCheck = await query('SELECT id FROM vaquejadas WHERE id = $1', [vaquejadaId]);
     if (vaquejadaCheck.rows.length === 0) {
       return NextResponse.json(
@@ -70,8 +66,25 @@ export async function POST(request: NextRequest) {
       [vaquejadaId, codigo]
     );
 
+    await registrarAuditoria({
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
+      acao: 'CRIAR_KIT',
+      entidade: 'kits',
+      entidadeId: res.rows[0].id,
+      detalhes: res.rows[0],
+      motivo: 'Cadastro de kit de senhas'
+    });
+
     return NextResponse.json(res.rows[0], { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'Já existe um kit com este código.' },
+        { status: 409 }
+      );
+    }
     console.error('Erro ao criar kit:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor' },

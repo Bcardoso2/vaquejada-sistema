@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { registrarAuditoria } from '@/lib/audit';
+import { exigirSessao } from '@/lib/api-auth';
 import crypto from 'crypto';
 
 const uuidv4 = () => crypto.randomUUID();
 
-// GET /api/juiz - Lista contestações para o Tribunal do Juiz / Boi de TV
-export async function GET() {
+// GET /api/juiz - Lista contestações para o Tribunal do Juiz / Boi de TV (JUIZ e ADMIN)
+export async function GET(request: Request) {
+  const auth = await exigirSessao(request, ['JUIZ']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const res = await query(
       `SELECT 
@@ -32,9 +36,15 @@ export async function GET() {
 
 // POST /api/juiz - Abertura, anexo de vídeo e julgamento de contestação (RN-04)
 export async function POST(request: Request) {
+  const auth = await exigirSessao(request, ['JUIZ']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const body = await request.json();
-    const { acao, contestacaoId, corridaId, senhaId, solicitanteNome, motivo, videoUrl, decisao, justificativa, juizNome } = body;
+    const { acao, contestacaoId, corridaId, senhaId, solicitanteNome, motivo, videoUrl, decisao, justificativa } = body;
+    const juizNome = auth.session.nome;
+    const usuarioId = auth.session.id;
+    const papel = auth.session.papel;
 
     // 1. Abrir nova contestação (RN-04)
     if (acao === 'ABRIR_CONTESTACAO') {
@@ -64,19 +74,20 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
-        usuarioNome: solicitanteNome,
-        papel: 'COMPETIDOR',
+        usuarioId,
+        usuarioNome: juizNome,
+        papel,
         acao: 'ABRIR_CONTESTACAO_TV',
         entidade: 'contestacoes_video',
         entidadeId: id,
-        detalhes: { corridaId, motivo },
-        motivo: 'Abertura de contestação pelo competidor'
+        detalhes: { corridaId, motivo, solicitanteNome },
+        motivo: 'Abertura de contestação via mesa do juiz'
       });
 
       return NextResponse.json({ success: true, id, estado: videoUrl ? 'PRONTA_PARA_ANALISE' : 'AGUARDANDO_VIDEO' });
     }
 
-    // 2. Anexar vídeo da prova (Equipe de gravação)
+    // 2. Anexar vídeo da prova (Equipe de gravação / Juiz)
     if (acao === 'ANEXAR_VIDEO') {
       if (!contestacaoId || !videoUrl) {
         return NextResponse.json({ error: 'Contestação e URL de vídeo são obrigatórios' }, { status: 400 });
@@ -90,8 +101,9 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
-        usuarioNome: 'Equipe de Gravação',
-        papel: 'OPERADOR',
+        usuarioId,
+        usuarioNome: juizNome,
+        papel,
         acao: 'ANEXAR_VIDEO_CONTESTACAO',
         entidade: 'contestacoes_video',
         entidadeId: contestacaoId,
@@ -133,8 +145,9 @@ export async function POST(request: Request) {
       );
 
       await registrarAuditoria({
-        usuarioNome: juizNome || 'Dr. Arnaldo Lima (Juiz)',
-        papel: 'JUIZ',
+        usuarioId,
+        usuarioNome: juizNome,
+        papel,
         acao: 'DECISAO_JUIZ_BOI_TV',
         entidade: 'contestacoes_video',
         entidadeId: contestacaoId,

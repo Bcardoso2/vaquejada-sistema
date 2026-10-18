@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { exigirSessao } from '@/lib/api-auth';
 import { registrarAuditoria } from '@/lib/audit';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-// PUT /api/vaquejadas/[id] - Atualiza evento
+// PUT /api/vaquejadas/[id] - Atualiza evento (Exclusivo ADMIN)
 export async function PUT(request: NextRequest, context: RouteContext) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { id } = await context.params;
     const body = await request.json();
@@ -18,6 +22,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const dataFim = body.data_fim || body.dataFim;
     const local = body.local ? String(body.local).trim() : null;
     const status = String(body.status || 'AGENDADA').trim();
+    const permitirMultiplas = body.permitir_dupla_multiplas_senhas !== undefined ? body.permitir_dupla_multiplas_senhas : true;
 
     if (!id) {
       return NextResponse.json({ error: 'Identificador do evento é obrigatório.' }, { status: 400 });
@@ -36,19 +41,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const res = await query(
       `UPDATE vaquejadas
-       SET codigo = $1, nome = $2, data_inicio = $3, data_fim = $4, local = $5, status = $6, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7
+       SET codigo = $1, nome = $2, data_inicio = $3, data_fim = $4, local = $5, status = $6, 
+           permitir_dupla_multiplas_senhas = $7, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8
        RETURNING *`,
-      [codigo, nome, dataInicio, dataFim, local, status, id]
+      [codigo, nome, dataInicio, dataFim, local, status, permitirMultiplas, id]
     );
 
     await registrarAuditoria({
-      usuarioNome: 'Gestor Geral',
-      papel: 'ADMIN',
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
       acao: 'ATUALIZAR_VAQUEJADA',
       entidade: 'vaquejadas',
       entidadeId: id,
-      detalhes: { codigo, nome, status },
+      detalhes: { codigo, nome, status, permitirMultiplas },
       motivo: 'Atualização dos dados do evento'
     });
 
@@ -65,8 +72,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   }
 }
 
-// DELETE /api/vaquejadas/[id] - Exclui evento
+// DELETE /api/vaquejadas/[id] - Exclui evento (Exclusivo ADMIN)
 export async function DELETE(request: NextRequest, context: RouteContext) {
+  const auth = await exigirSessao(request, ['ADMIN']);
+  if (!auth.autorizado) return auth.response;
+
   try {
     const { id } = await context.params;
 
@@ -91,8 +101,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     await query('DELETE FROM vaquejadas WHERE id = $1', [id]);
 
     await registrarAuditoria({
-      usuarioNome: 'Gestor Geral',
-      papel: 'ADMIN',
+      usuarioId: auth.session.id,
+      usuarioNome: auth.session.nome,
+      papel: auth.session.papel,
       acao: 'EXCLUIR_VAQUEJADA',
       entidade: 'vaquejadas',
       entidadeId: id,
