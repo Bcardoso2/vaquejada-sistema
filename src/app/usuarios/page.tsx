@@ -17,12 +17,24 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const [erroAcesso, setErroAcesso] = useState<string | null>(null);
 
+  // Toasts
+  const [toast, setToast] = useState<{ tipo: 'sucesso' | 'erro'; mensagem: string } | null>(null);
+
+  const exibirToast = (tipo: 'sucesso' | 'erro', mensagem: string) => {
+    setToast({ tipo, mensagem });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
+
   // Modais
   const [modalNovo, setModalNovo] = useState(false);
   const [modalEditar, setModalEditar] = useState<{
     aberto: boolean;
     usuario: Usuario | null;
   }>({ aberto: false, usuario: null });
+
+  const [modalConfirmarDesativar, setModalConfirmarDesativar] = useState<Usuario | null>(null);
 
   // Form States
   const [novoUsuario, setNovoUsuario] = useState({
@@ -77,12 +89,13 @@ export default function UsuariosPage() {
       if (res.ok) {
         setModalNovo(false);
         setNovoUsuario({ nome: '', email: '', senha: '', papel: 'SECRETARIA', ativo: true });
+        exibirToast('sucesso', `Usuário "${data.usuario?.nome}" cadastrado com sucesso.`);
         await carregarUsuarios();
       } else {
-        alert(data.error || 'Erro ao criar usuário');
+        exibirToast('erro', data.error || 'Erro ao criar usuário');
       }
     } catch {
-      alert('Erro ao conectar ao servidor');
+      exibirToast('erro', 'Erro ao conectar ao servidor');
     }
   };
 
@@ -109,30 +122,49 @@ export default function UsuariosPage() {
       const data = await res.json();
       if (res.ok) {
         setModalEditar({ aberto: false, usuario: null });
+        exibirToast('sucesso', 'Dados do usuário atualizados com sucesso.');
         await carregarUsuarios();
       } else {
-        alert(data.error || 'Erro ao atualizar usuário');
+        exibirToast('erro', data.error || 'Erro ao atualizar usuário');
       }
     } catch {
-      alert('Erro de conexão');
+      exibirToast('erro', 'Erro de conexão com o servidor');
     }
   };
 
-  const handleDesativar = async (usuario: Usuario) => {
-    if (!confirm(`Deseja realmente desativar o usuário "${usuario.nome}"?`)) return;
+  const confirmarDesativacao = async () => {
+    if (!modalConfirmarDesativar) return;
 
     try {
-      const res = await fetch(`/api/usuarios/${usuario.id}`, {
+      const res = await fetch(`/api/usuarios/${modalConfirmarDesativar.id}`, {
         method: 'DELETE',
       });
       const data = await res.json();
       if (res.ok) {
+        exibirToast('sucesso', `Usuário "${modalConfirmarDesativar.nome}" desativado com sucesso.`);
+        setModalConfirmarDesativar(null);
         await carregarUsuarios();
       } else {
-        alert(data.error || 'Erro ao desativar usuário');
+        exibirToast('erro', data.error || 'Erro ao desativar usuário');
       }
     } catch {
-      alert('Erro ao conectar ao servidor');
+      exibirToast('erro', 'Erro ao conectar ao servidor');
+    }
+  };
+
+  const handleDesbloquear = async (usuario: Usuario) => {
+    try {
+      const res = await fetch(`/api/usuarios/${usuario.id}/desbloquear`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        exibirToast('sucesso', data.message || `Usuário "${usuario.nome}" desbloqueado com sucesso.`);
+      } else {
+        exibirToast('erro', data.error || 'Erro ao desbloquear usuário');
+      }
+    } catch {
+      exibirToast('erro', 'Erro de comunicação ao desbloquear');
     }
   };
 
@@ -167,7 +199,7 @@ export default function UsuariosPage() {
 
   if (erroAcesso) {
     return (
-      <div className="max-w-2xl mx-auto my-12 bg-rose-50 border border-rose-200 p-8 rounded-2xl text-center">
+      <div className="max-w-2xl mx-auto my-12 bg-rose-50 border border-rose-200 p-8 rounded-2xl text-center shadow-sm">
         <div className="text-4xl mb-3">🔒</div>
         <h2 className="text-xl font-bold text-rose-900 mb-2">Acesso Negado</h2>
         <p className="text-sm text-rose-700 mb-6">{erroAcesso}</p>
@@ -183,6 +215,26 @@ export default function UsuariosPage() {
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium transition animate-in fade-in slide-in-from-top-2 ${
+            toast.tipo === 'sucesso'
+              ? 'bg-emerald-950 text-emerald-100 border-emerald-800'
+              : 'bg-rose-950 text-rose-100 border-rose-800'
+          }`}
+        >
+          <span>{toast.tipo === 'sucesso' ? '✅' : '⚠️'}</span>
+          <span>{toast.mensagem}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-2 text-white/60 hover:text-white font-bold"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Cabeçalho */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -195,13 +247,13 @@ export default function UsuariosPage() {
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            Cadastre novos operadores, configure papéis de acesso e redefina credenciais
+            Cadastre novos operadores, configure papéis de acesso e desbloqueie tentativas de login
           </p>
         </div>
 
         <button
           onClick={() => setModalNovo(true)}
-          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-sm transition shadow-xs flex items-center justify-center gap-2"
+          className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-sm transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
         >
           <span>+</span> Novo Usuário
         </button>
@@ -254,14 +306,22 @@ export default function UsuariosPage() {
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => abrirEdicao(u)}
-                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition cursor-pointer"
+                        title="Editar cadastro ou redefinir senha"
                       >
                         Editar / Senha
                       </button>
+                      <button
+                        onClick={() => handleDesbloquear(u)}
+                        className="px-2.5 py-1 bg-white hover:bg-amber-50 text-amber-700 border border-amber-300 rounded text-xs font-semibold transition cursor-pointer"
+                        title="Limpar bloqueios de tentativas incorretas de senha"
+                      >
+                        Desbloquear
+                      </button>
                       {u.ativo && (
                         <button
-                          onClick={() => handleDesativar(u)}
-                          className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded text-xs font-semibold transition"
+                          onClick={() => setModalConfirmarDesativar(u)}
+                          className="px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded text-xs font-semibold transition cursor-pointer"
                         >
                           Desativar
                         </button>
@@ -274,6 +334,41 @@ export default function UsuariosPage() {
           </table>
         </div>
       </div>
+
+      {/* Modal Confirmar Desativação (Sem window.confirm) */}
+      {modalConfirmarDesativar && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl font-bold mx-auto">
+              ⚠️
+            </div>
+            <div className="text-center">
+              <h3 className="text-base font-bold text-slate-900">Desativar Usuário</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Deseja realmente desativar o acesso de{' '}
+                <strong className="text-slate-800">{modalConfirmarDesativar.nome}</strong>?
+                O usuário perderá o acesso ao sistema imediatamente.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setModalConfirmarDesativar(null)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarDesativacao}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
+              >
+                Confirmar Desativação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Novo Usuário */}
       {modalNovo && (
@@ -339,13 +434,13 @@ export default function UsuariosPage() {
               <button
                 type="button"
                 onClick={() => setModalNovo(false)}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Cadastrar
               </button>
@@ -427,13 +522,13 @@ export default function UsuariosPage() {
               <button
                 type="button"
                 onClick={() => setModalEditar({ aberto: false, usuario: null })}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50"
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
               >
                 Salvar Alterações
               </button>

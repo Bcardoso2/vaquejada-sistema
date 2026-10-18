@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'vaquejada-masterdealers-secret-key-prod-2026'
-);
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+  throw new Error(
+    'CONFIGURAÇÃO FATAL DE SEGURANÇA: A variável de ambiente JWT_SECRET não está definida. O servidor não pode iniciar sem JWT_SECRET.'
+  );
+}
+
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 const COOKIE_NAME = 'vaquejada_session';
 
@@ -25,6 +29,7 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
   '/vaquejadas': ['ADMIN'],
   '/kits': ['ADMIN'],
   '/oportunidades': ['ADMIN'],
+  '/senhas': ['ADMIN', 'SECRETARIA'],
   '/bois-ouro': ['ADMIN', 'SECRETARIA'],
   '/secretaria': ['ADMIN', 'SECRETARIA'],
   '/financeiro': ['ADMIN', 'SECRETARIA'],
@@ -37,6 +42,7 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
 const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/usuarios', roles: ['ADMIN'] },
   { prefixo: '/api/auditoria', roles: ['ADMIN'] },
+  { prefixo: '/api/bois-ouro', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/bois', roles: ['ADMIN'] },
   { prefixo: '/api/vaquejadas', roles: ['ADMIN'] },
   { prefixo: '/api/oportunidades', roles: ['ADMIN'] },
@@ -48,8 +54,10 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/corridas', roles: ['ADMIN', 'OPERADOR_PISTA'] },
   { prefixo: '/api/juiz', roles: ['ADMIN', 'JUIZ'] },
   { prefixo: '/api/contestacoes', roles: ['ADMIN', 'JUIZ'] },
+  { prefixo: '/api/resultados-senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/resultados', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
 ];
+
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -62,10 +70,12 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/icone') ||
     pathname.startsWith('/simbolo') ||
     pathname.includes('.') ||
-    pathname === '/api/auth/login'
+    pathname === '/api/auth/login' ||
+    pathname === '/acesso-negado'
   ) {
     return NextResponse.next();
   }
+
 
   // 2. Extrair token do cookie ou Bearer header
   let token = request.cookies.get(COOKIE_NAME)?.value;

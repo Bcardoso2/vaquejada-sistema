@@ -6,6 +6,8 @@ import {
   verificarTentativasLogin, 
   registrarFalhaLogin, 
   limparTentativasLogin,
+  extrairIpCliente,
+  isCookieSecure,
   COOKIE_NAME,
   UserRole
 } from '@/lib/auth';
@@ -24,13 +26,14 @@ export async function POST(request: NextRequest) {
     }
 
     const emailLimpo = email.toLowerCase().trim();
+    const ip = extrairIpCliente(request);
 
-    // 1. Verificar Rate Limiting / Bloqueio de tentativas
-    const rateLimit = await verificarTentativasLogin(emailLimpo);
+    // 1. Verificar Rate Limiting refinado por usuário E por IP
+    const rateLimit = await verificarTentativasLogin(emailLimpo, ip);
     if (!rateLimit.permitido) {
       return NextResponse.json(
         {
-          error: `Muitas tentativas incorretas. Conta temporariamente bloqueada por segurança. Tente novamente em ${rateLimit.tempoRestanteSegundos || 900} segundos.`,
+          error: `Muitas tentativas incorretas deste endereço IP para esta conta. Acesso temporariamente bloqueado por segurança. Tente novamente em ${rateLimit.tempoRestanteSegundos || 900} segundos.`,
         },
         { status: 429 }
       );
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (userRes.rowCount === 0) {
-      await registrarFalhaLogin(emailLimpo);
+      await registrarFalhaLogin(emailLimpo, ip);
       return NextResponse.json(
         { error: 'Email ou senha inválidos' },
         { status: 401 }
@@ -64,15 +67,15 @@ export async function POST(request: NextRequest) {
     // 3. Verificar senha com bcrypt
     const senhaValida = await verificarSenha(senha, usuario.senha_hash);
     if (!senhaValida) {
-      await registrarFalhaLogin(emailLimpo);
+      await registrarFalhaLogin(emailLimpo, ip);
       return NextResponse.json(
         { error: 'Email ou senha inválidos' },
         { status: 401 }
       );
     }
 
-    // 4. Limpar contador de tentativas
-    await limparTentativasLogin(emailLimpo);
+    // 4. Limpar contador de tentativas para este usuário e IP
+    await limparTentativasLogin(emailLimpo, ip);
 
     // 5. Criar token JWT
     const token = await criarTokenSessao({
@@ -84,16 +87,17 @@ export async function POST(request: NextRequest) {
 
     // 6. Registrar Auditoria do Login
     await registrarAuditoria({
+      usuarioId: usuario.id,
       usuarioNome: usuario.nome,
       papel: usuario.papel,
       acao: 'LOGIN_SUCESSO',
       entidade: 'usuarios',
       entidadeId: usuario.id,
-      detalhes: { email: usuario.email, papel: usuario.papel },
+      detalhes: { email: usuario.email, papel: usuario.papel, ip },
       motivo: 'Acesso autenticado ao sistema',
     });
 
-    // 7. Retornar resposta com Cookie httpOnly + secure + sameSite
+    // 7. Retornar resposta com Cookie httpOnly + secure (configurável) + sameSite
     const response = NextResponse.json({
       success: true,
       usuario: {
@@ -108,13 +112,14 @@ export async function POST(request: NextRequest) {
       name: COOKIE_NAME,
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isCookieSecure(),
       sameSite: 'lax',
       path: '/',
       maxAge: 24 * 60 * 60, // 24 horas
     });
 
     return response;
+
   } catch (error) {
     console.error('Erro no login:', error);
     return NextResponse.json(

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { COOKIE_NAME } from '@/lib/auth';
+import { COOKIE_NAME, isCookieSecure } from '@/lib/auth';
 
 export async function POST() {
   const response = NextResponse.json({
@@ -11,7 +11,7 @@ export async function POST() {
     name: COOKIE_NAME,
     value: '',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isCookieSecure(),
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
@@ -19,3 +19,4 @@ export async function POST() {
 
   return response;
 }
+
