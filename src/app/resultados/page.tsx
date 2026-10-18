@@ -1,477 +1,333 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
-import { Button } from '../../components/Button';
-import { DataTable } from '../../components/DataTable';
-import { FormInput } from '../../components/FormInput';
+import { useEffect, useState, useMemo } from 'react';
+import { avaliarClassificacaoDupla } from '@/lib/regras-competicao';
 
-interface Resultado {
+interface CorridaItem {
   id: string;
   senha_id: string;
-  vaquejada_id: string;
-  boi1_nota?: number;
-  boi2_nota?: number;
-  boi1_desclassificado: boolean;
-  boi2_desclassificado: boolean;
-  motivo_desclassificao_boi1?: string;
-  motivo_desclassificao_boi2?: string;
-  decisao_juiz: string;
-  observacoes_juiz?: string;
-  video_contestacao_url?: string;
-  criado_em: string;
+  senha_codigo: string;
+  senha_categoria: string;
+  puxador_nome: string;
+  esteira_nome: string;
+  boi_nome: string;
+  boi_numero: number;
+  tipo: string;
+  ordem_mapa: number;
+  estado: string;
+  resultado_final: string | null;
+  estado_julgamento: string;
 }
 
-interface Senha {
-  id: string;
-  codigo: string;
+interface ClassificacaoDupla {
+  senhaId: string;
+  senhaCodigo: string;
+  categoria: string;
+  puxador: string;
+  esteira: string;
+  corridas: CorridaItem[];
+  totalCorridas: number;
+  valeuCount: number;
+  zeroCount: number;
+  pendenteCount: number;
+  statusClassificacao: 'CLASSIFICADO' | 'DESCLASSIFICADO' | 'EM_ANDAMENTO';
 }
 
-interface Vaquejada {
-  id: string;
-  codigo: string;
-  nome: string;
-}
-
-interface Usuario {
-  id: string;
-  nome: string;
-}
-
-export default function ResultadosPage() {
-  const [resultados, setResultados] = useState<Resultado[]>([]);
-  const [senhas, setSenhas] = useState<Senha[]>([]);
-  const [vaquejadas, setVaquejadas] = useState<Vaquejada[]>([]);
-  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+export default function ResultadosOficiaisPage() {
+  const [corridas, setCorridas] = useState<CorridaItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Partial<Resultado>>({
-    senha_id: '',
-    vaquejada_id: '',
-    boi1_nota: undefined,
-    boi2_nota: undefined,
-    boi1_desclassificado: false,
-    boi2_desclassificado: false,
-    motivo_desclassificao_boi1: '',
-    motivo_desclassificao_boi2: '',
-    decisao_juiz: '',
-    observacoes_juiz: '',
-    video_contestacao_url: ''
-  });
+  const [categoriaFiltro, setCategoriaFiltro] = useState('TODAS');
+  const [busca, setBusca] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
+  const carregarDados = async () => {
     try {
-      const [resultadosRes, senhasRes, vaquejadasRes, usuariosRes] = await Promise.all([
-        api.get<Resultado[]>('/api/resultados-senhas'),
-        api.get<Senha[]>('/api/senhas'),
-        api.get<Vaquejada[]>('/api/vaquejadas'),
-        api.get<Usuario[]>('/api/usuarios') // Assuming this endpoint exists
-      ]);
-
-      if (resultadosRes.error) throw new Error(resultadosRes.error);
-      if (senhasRes.error) throw new Error(senhasRes.error);
-      if (vaquejadasRes.error) throw new Error(vaquejadasRes.error);
-      if (usuariosRes.error) throw new Error(usuariosRes.error);
-
-      setResultados(resultadosRes.data || []);
-      setSenhas(senhasRes.data || []);
-      setVaquejadas(vaquejadasRes.data || []);
-      setUsuarios(usuariosRes.data || []);
-      setError(null);
+      setLoading(true);
+      const res = await fetch('/api/mapa');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCorridas(data);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
+      console.error('Erro ao carregar resultados:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (field: keyof Resultado, value: string | number | boolean | undefined) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
+  useEffect(() => {
+    carregarDados();
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Agrupar corridas por senha para formar a pontuação da dupla
+  const ranking = useMemo(() => {
+    const mapaDuplas = new Map<string, ClassificacaoDupla>();
 
-    if (!formData.senha_id || !formData.vaquejada_id || !formData.decisao_juiz) {
-      setError('Por favor, preencha todos os campos obrigatórios');
-      return;
-    }
-
-    // Validate numeric fields if provided
-    if (formData.boi1_nota !== undefined && (formData.boi1_nota < 0 || formData.boi1_nota > 10)) {
-      setError('A nota do boi 1 deve estar entre 0 e 10');
-      return;
-    }
-
-    if (formData.boi2_nota !== undefined && (formData.boi2_nota < 0 || formData.boi2_nota > 10)) {
-      setError('A nota do boi 2 deve estar entre 0 e 10');
-      return;
-    }
-
-    if (editing) {
-      // Update existing
-      const response = await api.put<Resultado>(`/api/resultados-senhas/${editing}`, formData as Resultado);
-      if (response.error) {
-        setError(response.error);
-      } else {
-        setEditing(null);
-        setFormData({
-          senha_id: '',
-          vaquejada_id: '',
-          boi1_nota: undefined,
-          boi2_nota: undefined,
-          boi1_desclassificado: false,
-          boi2_desclassificado: false,
-          motivo_desclassificao_boi1: '',
-          motivo_desclassificao_boi2: '',
-          decisao_juiz: '',
-          observacoes_juiz: '',
-          video_contestacao_url: ''
+    for (const c of corridas) {
+      const chave = c.senha_id || c.senha_codigo;
+      if (!mapaDuplas.has(chave)) {
+        mapaDuplas.set(chave, {
+          senhaId: c.senha_id,
+          senhaCodigo: c.senha_codigo || 'S/N',
+          categoria: c.senha_categoria || 'PROFISSIONAL',
+          puxador: c.puxador_nome || 'Não informado',
+          esteira: c.esteira_nome || 'Não informado',
+          corridas: [],
+          totalCorridas: 0,
+          valeuCount: 0,
+          zeroCount: 0,
+          pendenteCount: 0,
+          statusClassificacao: 'EM_ANDAMENTO',
         });
-        await loadData();
       }
-    } else {
-      // Create new
-      const response = await api.post<Resultado>('/api/resultados-senhas', formData as Resultado);
-      if (response.error) {
-        setError(response.error);
+
+      const d = mapaDuplas.get(chave)!;
+      d.corridas.push(c);
+      d.totalCorridas += 1;
+
+      if (c.resultado_final === 'VALEU') {
+        d.valeuCount += 1;
+      } else if (c.resultado_final === 'ZERO') {
+        d.zeroCount += 1;
       } else {
-        setFormData({
-          senha_id: '',
-          vaquejada_id: '',
-          boi1_nota: undefined,
-          boi2_nota: undefined,
-          boi1_desclassificado: false,
-          boi2_desclassificado: false,
-          motivo_desclassificao_boi1: '',
-          motivo_desclassificao_boi2: '',
-          decisao_juiz: '',
-          observacoes_juiz: '',
-          video_contestacao_url: ''
-        });
-        await loadData();
+        d.pendenteCount += 1;
       }
+
+      // Regra de vaquejada centralizada em src/lib/regras-competicao.ts (A CONFIRMAR)
+      d.statusClassificacao = avaliarClassificacaoDupla(d.valeuCount, d.zeroCount);
     }
-  };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este resultado?')) return;
+    const lista = Array.from(mapaDuplas.values());
 
-    const response = await api.delete<void>(`/api/resultados-senhas/${id}`);
-    if (response.error) {
-      setError(response.error);
-    } else {
-      await loadData();
-    }
-  };
-
-  const handleEdit = (resultado: Resultado) => {
-    setEditing(resultado.id);
-    setFormData({
-      senha_id: resultado.senha_id,
-      vaquejada_id: resultado.vaquejada_id,
-      boi1_nota: resultado.boi1_nota,
-      boi2_nota: resultado.boi2_nota,
-      boi1_desclassificado: resultado.boi1_desclassificado,
-      boi2_desclassificado: resultado.boi2_desclassificado,
-      motivo_desclassificao_boi1: resultado.motivo_desclassificao_boi1 || '',
-      motivo_desclassificao_boi2: resultado.motivo_desclassificao_boi2 || '',
-      decisao_juiz: resultado.decisao_juiz,
-      observacoes_juiz: resultado.observacoes_juiz || '',
-      video_contestacao_url: resultado.video_contestacao_url || ''
+    // Ordenar: primeiro classificados com mais valeu, depois em andamento, depois desclassificados
+    lista.sort((a, b) => {
+      if (b.valeuCount !== a.valeuCount) return b.valeuCount - a.valeuCount;
+      return a.zeroCount - b.zeroCount;
     });
-  };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
+    return lista;
+  }, [corridas]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 w-full max-w-xl">
-          <p className="font-bold">{error}</p>
-          <button onClick={() => setError(null)} className="ml-2 text-indigo-600 hover:text-indigo-800">
-            Tentar novamente
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const filtrados = useMemo(() => {
+    return ranking.filter((r) => {
+      if (categoriaFiltro !== 'TODAS' && r.categoria !== categoriaFiltro) return false;
+      if (busca.trim()) {
+        const termo = busca.toLowerCase();
+        return (
+          r.senhaCodigo.toLowerCase().includes(termo) ||
+          r.puxador.toLowerCase().includes(termo) ||
+          r.esteira.toLowerCase().includes(termo)
+        );
+      }
+      return true;
+    });
+  }, [ranking, categoriaFiltro, busca]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Gestão de Resultados
+    <div className="space-y-6">
+      {/* Cabeçalho */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Circuito Oficial 2026
+            </span>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight mt-1">
+            Resultados & Classificação Oficial
           </h1>
-          <Button
-            variant="primary"
-            onClick={() => setEditing(null)}
+          <p className="text-sm text-slate-500 mt-0.5">
+            Apuração em tempo real com validação de pista e mesa de julgamento
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={carregarDados}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition"
           >
-            {editing ? 'Cancelar' : 'Novo Resultado'}
-          </Button>
+            Atualizar Classificação
+          </button>
+          <Link
+            href="/mapa"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition shadow-xs"
+          >
+            Ver Mapa da Pista
+          </Link>
+        </div>
+      </div>
+
+      {/* Métricas Rápidas */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Duplas Inscritas</span>
+          <div className="text-2xl font-extrabold text-slate-900 mt-1">{ranking.length}</div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Aptas p/ Final (100% Valeu)</span>
+          <div className="text-2xl font-extrabold text-emerald-700 mt-1">
+            {ranking.filter((r) => r.statusClassificacao === 'CLASSIFICADO').length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Em Andamento na Pista</span>
+          <div className="text-2xl font-extrabold text-amber-700 mt-1">
+            {ranking.filter((r) => r.statusClassificacao === 'EM_ANDAMENTO').length}
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Desclassificadas (Zero)</span>
+          <div className="text-2xl font-extrabold text-rose-700 mt-1">
+            {ranking.filter((r) => r.statusClassificacao === 'DESCLASSIFICADO').length}
+          </div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-semibold text-slate-500 mr-1">Categoria:</span>
+          {['TODAS', 'PROFISSIONAL', 'AMADOR', 'ASPIRANTE', 'ABERTA'].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoriaFiltro(cat)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${
+                categoriaFiltro === cat
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
-        {/* Form */}
-        <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            {editing ? 'Editar Resultado' : 'Novo Resultado'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <FormInput
-              label="Senha *"
-              placeholder="Selecione uma senha"
-              value={formData.senha_id || ''}
-              onChange={(e) => handleChange('senha_id', e.target.value)}
-              required
-              error={error && error.includes('senha') ? error : undefined}
-            >
-              <option value="">Selecione uma senha</option>
-              {senhas.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.codigo}
-                </option>
-              ))}
-            </FormInput>
-            <FormInput
-              label="Vaquejada *"
-              placeholder="Selecione uma vaquejada"
-              value={formData.vaquejada_id || ''}
-              onChange={(e) => handleChange('vaquejada_id', e.target.value)}
-              required
-              error={error && error.includes('vaquejada') ? error : undefined}
-            >
-              <option value="">Selecione uma vaquejada</option>
-              {vaquejadas.map(v => (
-                <option key={v.id} value={v.id}>
-                  {v.codigo} - {v.nome}
-                </option>
-              ))}
-            </FormInput>
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormInput
-                label="Nota do Boi 1"
-                type="number"
-                min="0"
-                max="10"
-                step="0.1"
-                value={formData.boi1_nota !== undefined ? formData.boi1_nota.toString() : ''}
-                onChange={(e) => {
-                  const num = parseFloat(e.target.value);
-                  handleChange('boi1_nota', isNaN(num) ? undefined : num);
-                }}
-                error={error && error.includes('boi 1 nota') ? error : undefined}
-              />
-              <FormInput
-                label="Nota do Boi 2"
-                type="number"
-                min="0"
-                max="10"
-                step="0.1"
-                value={formData.boi2_nota !== undefined ? formData.boi2_nota.toString() : ''}
-                onChange={(e) => {
-                  const num = parseFloat(e.target.value);
-                  handleChange('boi2_nota', isNaN(num) ? undefined : num);
-                }}
-                error={error && error.includes('boi 2 nota') ? error : undefined}
-              />
-            </div>
-            <div className="flex items-center space-x-3">
-              <label className="text-sm font-medium text-gray-700">
-                Boi 1 Desclassificado
-              </label>
-              <input
-                type="checkbox"
-                checked={formData.boi1_desclassificado ?? false}
-                onChange={(e) => handleChange('boi1_desclassificado', e.target.checked)}
-                className="ml-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-              />
-            </div>
-            <div className="flex items-center space-x-3">
-              <label className="text-sm font-medium text-gray-700">
-                Boi 2 Desclassificado
-              </label>
-              <input
-                type="checkbox"
-                checked={formData.boi2_desclassificado ?? false}
-                onChange={(e) => handleChange('boi2_desclassificado', e.target.checked)}
-                className="ml-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-              />
-            </div>
-            <FormInput
-              label="Motivo Desclassificação Boi 1"
-              placeholder="Descreva o motivo (se aplicável)"
-              value={formData.motivo_desclassificao_boi1 || ''}
-              onChange={(e) => handleChange('motivo_desclassificao_boi1', e.target.value)}
-            />
-            <FormInput
-              label="Motivo Desclassificação Boi 2"
-              placeholder="Descreva o motivo (se aplicável)"
-              value={formData.motivo_desclassificao_boi2 || ''}
-              onChange={(e) => handleChange('motivo_desclassificao_boi2', e.target.value)}
-            />
-            <FormInput
-              label="Juiz *"
-              placeholder="Selecione o juiz"
-              value={formData.decisao_juiz || ''}
-              onChange={(e) => handleChange('decisao_juiz', e.target.value)}
-              required
-              error={error && error.includes('juiz') ? error : undefined}
-            >
-              <option value="">Selecione um juiz</option>
-              {usuarios.map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.nome}
-                </option>
-              ))}
-            </FormInput>
-            <FormInput
-              label="Observações do Juiz"
-              placeholder="Observações adicionais do juiz"
-              value={formData.observacoes_juiz || ''}
-              onChange={(e) => handleChange('observacoes_juiz', e.target.value)}
-              multiline={true}
-              rows={3}
-            />
-            <FormInput
-              label="URL do Vídeo de Contestação"
-              placeholder="URL do vídeo para contestação de zero (se aplicável)"
-              value={formData.video_contestacao_url || ''}
-              onChange={(e) => handleChange('video_contestacao_url', e.target.value)}
-            />
+        <input
+          type="text"
+          placeholder="Buscar puxador, esteira ou senha..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="text-xs border border-slate-300 rounded-lg px-3 py-2 w-full md:w-64"
+        />
+      </div>
 
-            <div className="flex items-center justify-between pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditing(null);
-                  setFormData({
-                    senha_id: '',
-                    vaquejada_id: '',
-                    boi1_nota: undefined,
-                    boi2_nota: undefined,
-                    boi1_desclassificado: false,
-                    boi2_desclassificado: false,
-                    motivo_desclassificao_boi1: '',
-                    motivo_desclassificao_boi2: '',
-                    decisao_juiz: '',
-                    observacoes_juiz: '',
-                    video_contestacao_url: ''
-                  });
-                }}
-              >
-                Limpar
-              </Button>
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={loading}
-              >
-                {loading ? 'Salvando...' : (editing ? 'Atualizar' : 'Criar')}
-              </Button>
-            </div>
-          </form>
-        </div>
+      {/* Tabela de Classificação */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <th className="py-3 px-4">Posição</th>
+                <th className="py-3 px-4">Senha</th>
+                <th className="py-3 px-4">Vaqueiros (Puxador / Esteira)</th>
+                <th className="py-3 px-4">Categoria</th>
+                <th className="py-3 px-4 text-center">Boi 1</th>
+                <th className="py-3 px-4 text-center">Boi 2</th>
+                <th className="py-3 px-4 text-center">Pontuação</th>
+                <th className="py-3 px-4 text-right">Situação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                    Carregando apuração dos resultados...
+                  </td>
+                </tr>
+              ) : filtrados.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                    Nenhuma dupla localizada com os filtros selecionados.
+                  </td>
+                </tr>
+              ) : (
+                filtrados.map((item, index) => {
+                  const boi1 = item.corridas[0]?.resultado_final;
+                  const boi2 = item.corridas[1]?.resultado_final;
 
-        {/* Table */}
-        <div className="bg-white shadow-sm rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Resultados Cadastrados
-          </h2>
-          <DataTable
-            columns={[
-              {
-                key: 'senha_id',
-                label: 'Senha',
-                format: (value) => {
-                  const senha = senhas.find(s => s.id === value);
-                  return senha ? senha.codigo : value || '-';
-                }
-              },
-              {
-                key: 'vaquejada_id',
-                label: 'Vaquejada',
-                format: (value) => {
-                  const vaquejada = vaquejadas.find(v => v.id === value);
-                  return vaquejada ? `${vaquejada.codigo} - ${vaquejada.nome}` : value || '-';
-                }
-              },
-              {
-                key: 'boi1_nota',
-                label: 'Nota Boi 1',
-                format: (value) => value !== undefined ? `${value}` : '-'
-              },
-              {
-                key: 'boi2_nota',
-                label: 'Nota Boi 2',
-                format: (value) => value !== undefined ? `${value}` : '-'
-              },
-              {
-                key: 'boi1_desclassificado',
-                label: 'Boi 1 Desclass.',
-                format: (value) => value ? 'Sim' : 'Não'
-              },
-              {
-                key: 'boi2_desclassificado',
-                label: 'Boi 2 Desclass.',
-                format: (value) => value ? 'Sim' : 'Não'
-              },
-              {
-                key: 'motivo_desclassificao_boi1',
-                label: 'Motivo Desclass. Boi 1'
-              },
-              {
-                key: 'motivo_desclassificao_boi2',
-                label: 'Motivo Desclass. Boi 2'
-              },
-              {
-                key: 'decisao_juiz',
-                label: 'Juiz',
-                format: (value) => {
-                  const usuario = usuarios.find(u => u.id === value);
-                  return usuario ? usuario.nome : value || '-';
-                }
-              },
-              {
-                key: 'observacoes_juiz',
-                label: 'Obs. Juiz'
-              },
-              {
-                key: 'video_contestacao_url',
-                label: 'Vídeo Contestação',
-                format: (value) => value ? 'Link disponível' : '-'
-              },
-              {
-                key: 'criado_em',
-                label: 'Criado em',
-                format: (value) => new Date(value).toLocaleDateString('pt-BR')
-              }
-            ]}
-            data={resultados}
-            showActions={true}
-            actions={[
-              { label: 'Editar', onClick: handleEdit, variant: 'default' },
-              { label: 'Excluir', onClick: handleDelete, variant: 'destructive' }
-            ]}
-            onRowClick={(resultado) => {
-              console.log('Clicked on resultado:', resultado);
-            }}
-          />
+                  return (
+                    <tr key={item.senhaId || index} className="hover:bg-slate-50 transition">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 font-mono">
+                        {index + 1}º
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-800">
+                        {item.senhaCodigo}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-slate-900">{item.puxador}</div>
+                        <div className="text-xs text-slate-500">Esteira: {item.esteira}</div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="text-xs font-medium bg-slate-100 px-2 py-0.5 rounded text-slate-700">
+                          {item.categoria}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {boi1 ? (
+                          <span
+                            className={`font-bold px-2 py-0.5 rounded text-xs ${
+                              boi1 === 'VALEU'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : boi1 === 'RETORNO'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {boi1}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-xs">Aguardando</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {boi2 ? (
+                          <span
+                            className={`font-bold px-2 py-0.5 rounded text-xs ${
+                              boi2 === 'VALEU'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : boi2 === 'RETORNO'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {boi2}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-xs">Aguardando</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="font-bold text-slate-900 text-sm">
+                          {item.valeuCount} Valeu
+                        </span>
+                        {item.zeroCount > 0 && (
+                          <span className="text-xs text-rose-600 block">
+                            {item.zeroCount} Zero
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <span
+                          className={`inline-block text-xs font-bold px-2.5 py-1 rounded-full ${
+                            item.statusClassificacao === 'CLASSIFICADO'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.statusClassificacao === 'DESCLASSIFICADO'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {item.statusClassificacao === 'CLASSIFICADO'
+                            ? 'Apto p/ Final'
+                            : item.statusClassificacao === 'DESCLASSIFICADO'
+                            ? 'Fora da Disputa'
+                            : 'Em Pista'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

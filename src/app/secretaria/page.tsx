@@ -1,6 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { SenhaMap } from '@/components/SenhaMap';
+
+/* ------------------------------------------------------------------ */
+/* Tipos                                                               */
+/* ------------------------------------------------------------------ */
 
 interface BoiOuro {
   id: string;
@@ -22,231 +27,412 @@ interface BoiOuro {
   boi_numero_registro: string;
 }
 
-export default function SecretariaPage() {
-  const [abaAtiva, setAbaAtiva] = useState<'VENDAS' | 'BOI_OURO'>('VENDAS');
-  const [boisOuro, setBoisOuro] = useState<BoiOuro[]>([]);
-  const [loading, setLoading] = useState(false);
+type Aba = 'VENDAS' | 'BOI_OURO';
+type FormaPagamento = 'PIX' | 'DINHEIRO' | 'VALE';
+type CanalVenda = 'PRESENCIAL' | 'ANTECIPADA';
+type FiltroBoi = 'TODOS' | 'PENDENTE_PAGAMENTO' | 'AGUARDANDO_AUTORIZACAO' | 'NO_MAPA';
 
-  // Form Venda de Senhas
-  const [senhasDisponiveis, setSenhasDisponiveis] = useState<any[]>([]);
-  const [senhaCodigo, setSenhaCodigo] = useState('');
+interface Toast {
+  tipo: 'sucesso' | 'erro';
+  texto: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilitários                                                         */
+/* ------------------------------------------------------------------ */
+
+const VALOR_BOI_OURO_PADRAO_CENTAVOS = 20000;
+
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const formatarCentavos = (c: number) => brl.format(c / 100);
+
+const inputBase =
+  'w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 ' +
+  'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ' +
+  'disabled:bg-slate-100 disabled:text-slate-400';
+
+function situacaoBoi(bo: BoiOuro): { chave: FiltroBoi; rotulo: string; classe: string } {
+  if (bo.estado === 'NO_MAPA') {
+    return { chave: 'NO_MAPA', rotulo: 'Liberado no mapa', classe: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  }
+  if (!bo.pago) {
+    return { chave: 'PENDENTE_PAGAMENTO', rotulo: 'Pagamento pendente', classe: 'bg-amber-50 text-amber-800 border-amber-200' };
+  }
+  return { chave: 'AGUARDANDO_AUTORIZACAO', rotulo: 'Aguardando autorização', classe: 'bg-blue-50 text-blue-700 border-blue-200' };
+}
+
+/* ------------------------------------------------------------------ */
+/* Componentes auxiliares (fora do componente principal para não       */
+/* serem recriados a cada render e perder o foco dos inputs)           */
+/* ------------------------------------------------------------------ */
+
+function Campo({
+  id,
+  label,
+  obrigatorio,
+  dica,
+  children,
+}: {
+  id: string;
+  label: string;
+  obrigatorio?: boolean;
+  dica?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+        {label}
+        {obrigatorio && <span className="text-red-600"> *</span>}
+      </label>
+      {children}
+      {dica && <p className="mt-1.5 text-xs text-slate-500">{dica}</p>}
+    </div>
+  );
+}
+
+function CartaoResumo({
+  titulo,
+  valor,
+  classe,
+}: {
+  titulo: string;
+  valor: number;
+  classe: string;
+}) {
+  return (
+    <div className={`rounded-xl border p-4 shadow-sm ${classe}`}>
+      <div className="text-xs font-bold uppercase tracking-wider opacity-80">{titulo}</div>
+      <div className="text-2xl font-bold mt-1">{valor}</div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Página                                                              */
+/* ------------------------------------------------------------------ */
+
+export default function SecretariaPage() {
+  const [abaAtiva, setAbaAtiva] = useState<Aba>('VENDAS');
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Estados de carregamento separados (antes um único "loading" misturava tudo)
+  const [carregandoLista, setCarregandoLista] = useState(false);
+  const [enviandoVenda, setEnviandoVenda] = useState(false);
+  const [enviandoSolicitacao, setEnviandoSolicitacao] = useState(false);
+  const [acaoEmAndamento, setAcaoEmAndamento] = useState<string | null>(null); // id do boi
+
+  const [boisOuro, setBoisOuro] = useState<BoiOuro[]>([]);
+
+  // Venda de senhas (agora trabalha com kits)
+  const [senhaCodigo, setSenhaCodigo] = useState(''); // Código da senha baixa do kit selecionado
   const [cavaloNome, setCavaloNome] = useState('');
-  const [formaPagamento, setFormaPagamento] = useState<'PIX' | 'DINHEIRO' | 'VALE'>('PIX');
-  const [canalVenda, setCanalVenda] = useState<'PRESENCIAL' | 'ANTECIPADA'>('PRESENCIAL');
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('PIX');
+  const [canalVenda, setCanalVenda] = useState<CanalVenda>('PRESENCIAL');
   const [puxadorNome, setPuxadorNome] = useState('');
   const [esteiraNome, setEsteiraNome] = useState('');
   const [categoria, setCategoria] = useState('PROFISSIONAL');
-  const [valorVenda, setValorVenda] = useState(600);
+  const [valorVenda, setValorVenda] = useState('600');
   const [retornoVenda, setRetornoVenda] = useState<any>(null);
+  const [mapaAberto, setMapaAberto] = useState(false);
 
-  // Form Solicitar Boi de Ouro
+  // Boi de Ouro
   const [senhaOrigemId, setSenhaOrigemId] = useState('');
+  const [busca, setBusca] = useState('');
+  const [filtro, setFiltro] = useState<FiltroBoi>('TODOS');
 
-  const carregarBoisOuro = async () => {
+  // Modal de pagamento (substitui o prompt() nativo)
+  const [pagamentoModal, setPagamentoModal] = useState<BoiOuro | null>(null);
+  const [referenciaPagamento, setReferenciaPagamento] = useState('PIX-CAIXA');
+
+  // Confirmação de autorização (substitui ação direta sem confirmação)
+  const [autorizacaoModal, setAutorizacaoModal] = useState<BoiOuro | null>(null);
+
+  /* ----------------------------- feedback ----------------------------- */
+
+  const mostrarToast = useCallback((tipo: Toast['tipo'], texto: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ tipo, texto });
+    toastTimer.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  /* ------------------------------ dados ------------------------------- */
+
+  const carregarBoisOuro = useCallback(async () => {
     try {
-      setLoading(true);
+      setCarregandoLista(true);
       const res = await fetch('/api/secretaria/boi-ouro');
       const data = await res.json();
       if (Array.isArray(data)) {
         setBoisOuro(data);
+      } else {
+        mostrarToast('erro', data?.error || 'Resposta inesperada ao carregar bois de ouro');
       }
     } catch (err) {
       console.error('Erro ao carregar bois de ouro:', err);
+      mostrarToast('erro', 'Não foi possível carregar os bois de ouro');
     } finally {
-      setLoading(false);
+      setCarregandoLista(false);
     }
-  };
-
-  const carregarSenhasDisponiveis = async () => {
-    try {
-      const res = await fetch('/api/senhas?limit=500');
-      const data = await res.json();
-      if (res.ok && Array.isArray(data)) {
-        const disponiveis = data
-          .filter((s: any) =>
-            s.vaquejada_id === 'vq-2026-portal' &&
-            s.estado_comercial === 'DISPONIVEL' &&
-            (s.faixa_senha === 'BAIXA' || s.faixa_senha === 'ALTA')
-          )
-          .sort((a: any, b: any) => Number(a.codigo) - Number(b.codigo));
-        setSenhasDisponiveis(disponiveis);
-        setSenhaCodigo((atual) =>
-          disponiveis.some((s: any) => s.codigo === atual)
-            ? atual
-            : (disponiveis[0]?.codigo || '')
-        );
-      }
-    } catch (err) {
-      console.error('Erro ao carregar senhas disponiveis:', err);
-    }
-  };
+  }, [mostrarToast]);
 
   useEffect(() => {
     carregarBoisOuro();
-    carregarSenhasDisponiveis();
-  }, []);
+  }, [carregarBoisOuro]);
+
+  // Chamada genérica para a API de Boi de Ouro
+  const chamarBoiOuro = async (corpo: Record<string, unknown>, mensagemErro: string) => {
+    try {
+      const res = await fetch('/api/secretaria/boi-ouro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        mostrarToast('erro', data.error || mensagemErro);
+        return false;
+      }
+      await carregarBoisOuro();
+      return true;
+    } catch {
+      mostrarToast('erro', mensagemErro);
+      return false;
+    }
+  };
+
+  /* ------------------------------ vendas ------------------------------ */
+
+  const valorVendaNumero = Number(valorVenda.replace(',', '.'));
+  const valorVendaValido = Number.isFinite(valorVendaNumero) && valorVendaNumero > 0;
+
+  // Calcula o código da senha alta correspondente ao kit
+  const codigoAltaDaSenhaSelecionada = senhaCodigo
+    ? String(799 + Number(senhaCodigo)).padStart(3, '0')
+    : '';
+
+  const limparFormularioVenda = () => {
+    setSenhaCodigo('');
+    setPuxadorNome('');
+    setEsteiraNome('');
+    setCavaloNome('');
+  };
 
   const handleEmitirVenda = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!senhaCodigo || !puxadorNome.trim() || !esteiraNome.trim() || !cavaloNome.trim()) {
-      alert('Selecione uma senha e informe puxador, esteira e cavalo.');
+
+    if (!senhaCodigo) {
+      mostrarToast('erro', 'Selecione uma senha no mapa.');
       return;
     }
-    if (!['PIX', 'DINHEIRO', 'VALE'].includes(formaPagamento)) {
-      alert('Selecione a forma de pagamento.');
+    if (!puxadorNome.trim() || !esteiraNome.trim() || !cavaloNome.trim()) {
+      mostrarToast('erro', 'Informe puxador, esteira e cavalo.');
+      return;
+    }
+    if (!valorVendaValido) {
+      mostrarToast('erro', 'Informe um valor de venda válido.');
       return;
     }
 
     try {
-      setLoading(true);
+      setEnviandoVenda(true);
       const res = await fetch('/api/secretaria/vendas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          senhaCodigo,
-          cavaloNome,
+          senhaCodigo, // Isso agora representa o código da senha baixa do kit
+          cavaloNome: cavaloNome.trim(),
           formaPagamento,
           canalVenda,
-          puxadorNome,
-          esteiraNome,
+          puxadorNome: puxadorNome.trim(),
+          esteiraNome: esteiraNome.trim(),
           categoria,
-          valorCentavos: Math.round(valorVenda * 100),
+          valorCentavos: Math.round(valorVendaNumero * 100),
         }),
       });
       const data = await res.json();
       if (res.ok) {
         setRetornoVenda(data);
-        setPuxadorNome('');
-        setEsteiraNome('');
-        setCavaloNome('');
-        await carregarSenhasDisponiveis();
+        limparFormularioVenda(); // agora também limpa a senha selecionada
+        mostrarToast('sucesso', 'Venda emitida com sucesso.');
       } else {
-        alert(data.error || 'Erro ao realizar venda');
+        mostrarToast('erro', data.error || 'Erro ao realizar venda');
       }
     } catch {
-      alert('Erro de conexão ao realizar venda');
+      mostrarToast('erro', 'Erro de conexão ao realizar venda');
     } finally {
-      setLoading(false);
+      setEnviandoVenda(false);
     }
   };
 
-  const handleConfirmarPagamentoBoiOuro = async (boiOuroId: string) => {
-    const ref = prompt('Informe a referência ou comprovante do pagamento:', 'PIX-CAIXA');
-    if (!ref) return;
-
-    try {
-      const res = await fetch('/api/secretaria/boi-ouro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'PAGAR',
-          boiOuroId,
-          referenciaPagamento: ref,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        await carregarBoisOuro();
-      } else {
-        alert(data.error || 'Erro ao confirmar pagamento');
-      }
-    } catch {
-      alert('Erro ao confirmar pagamento');
-    }
-  };
-
-  const handleAutorizarSecretariaBoiOuro = async (boiOuroId: string) => {
-    try {
-      const res = await fetch('/api/secretaria/boi-ouro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'AUTORIZAR_SECRETARIA',
-          boiOuroId,
-          usuarioPapel: 'SECRETARIO',
-          usuarioNome: 'Secretaria Oficial',
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        await carregarBoisOuro();
-      } else {
-        alert(data.error || 'Erro ao autorizar boi de ouro');
-      }
-    } catch {
-      alert('Erro ao autorizar boi de ouro');
-    }
-  };
+  /* ----------------------------- boi de ouro -------------------------- */
 
   const handleSolicitarBoiOuro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!senhaOrigemId.trim()) {
-      alert('Informe o ID ou código da senha de origem');
+      mostrarToast('erro', 'Informe o ID ou código da senha de origem.');
       return;
     }
-
-    try {
-      const res = await fetch('/api/secretaria/boi-ouro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'SOLICITAR',
-          senhaOrigemId,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSenhaOrigemId('');
-        await carregarBoisOuro();
-      } else {
-        alert(data.error || 'Erro ao solicitar boi de ouro');
-      }
-    } catch {
-      alert('Erro ao solicitar boi de ouro');
+    setEnviandoSolicitacao(true);
+    const ok = await chamarBoiOuro(
+      { acao: 'SOLICITAR', senhaOrigemId: senhaOrigemId.trim() },
+      'Erro ao solicitar boi de ouro',
+    );
+    setEnviandoSolicitacao(false);
+    if (ok) {
+      setSenhaOrigemId('');
+      mostrarToast('sucesso', 'Solicitação registrada.');
     }
   };
 
+  const abrirModalPagamento = (bo: BoiOuro) => {
+    setReferenciaPagamento('PIX-CAIXA');
+    setPagamentoModal(bo);
+  };
+
+  const confirmarPagamento = async () => {
+    if (!pagamentoModal) return;
+    const ref = referenciaPagamento.trim();
+    if (!ref) {
+      mostrarToast('erro', 'Informe a referência ou comprovante do pagamento.');
+      return;
+    }
+    const alvo = pagamentoModal;
+    setAcaoEmAndamento(alvo.id);
+    const ok = await chamarBoiOuro(
+      { acao: 'PAGAR', boiOuroId: alvo.id, referenciaPagamento: ref },
+      'Erro ao confirmar pagamento',
+    );
+    setAcaoEmAndamento(null);
+    if (ok) {
+      setPagamentoModal(null);
+      mostrarToast('sucesso', 'Pagamento confirmado.');
+    }
+  };
+
+  const confirmarAutorizacao = async () => {
+    if (!autorizacaoModal) return;
+    const alvo = autorizacaoModal;
+    setAcaoEmAndamento(alvo.id);
+    // ATENÇÃO: papel/nome do usuário devem ser definidos pelo servidor a partir
+    // da sessão. Enviados aqui apenas para manter compatibilidade com a API atual.
+    const ok = await chamarBoiOuro(
+      {
+        acao: 'AUTORIZAR_SECRETARIA',
+        boiOuroId: alvo.id,
+        usuarioPapel: 'SECRETARIO',
+        usuarioNome: 'Secretaria Oficial',
+      },
+      'Erro ao autorizar boi de ouro',
+    );
+    setAcaoEmAndamento(null);
+    if (ok) {
+      setAutorizacaoModal(null);
+      mostrarToast('sucesso', 'Boi de ouro liberado no mapa.');
+    }
+  };
+
+  /* --------------------------- listas derivadas ----------------------- */
+
+  const resumo = useMemo(() => {
+    const r = { pendentes: 0, aguardando: 0, noMapa: 0 };
+    boisOuro.forEach((bo) => {
+      const s = situacaoBoi(bo);
+      if (s.chave === 'PENDENTE_PAGAMENTO') r.pendentes++;
+      else if (s.chave === 'AGUARDANDO_AUTORIZACAO') r.aguardando++;
+      else r.noMapa++;
+    });
+    return r;
+  }, [boisOuro]);
+
+  const boisFiltrados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return boisOuro.filter((bo) => {
+      if (filtro !== 'TODOS' && situacaoBoi(bo).chave !== filtro) return false;
+      if (!termo) return true;
+      return [bo.senha_codigo, bo.senha_origem_id, bo.puxador_nome, bo.esteira_nome, bo.boi_nome, bo.boi_numero_registro]
+        .filter(Boolean)
+        .some((campo) => campo.toLowerCase().includes(termo));
+    });
+  }, [boisOuro, busca, filtro]);
+
+  /* ------------------------------ render ------------------------------ */
+
   return (
     <div className="space-y-6">
-      {/* Cabeçalho */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Secretaria & Emissão de Senhas
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Gestão de senhas individuais, pagamentos e liberação de Boi de Ouro
-          </p>
+      {/* Toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed top-4 right-4 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm font-medium shadow-lg flex items-start gap-3 ${
+            toast.tipo === 'sucesso'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              : 'bg-red-50 border-red-300 text-red-900'
+          }`}
+        >
+          <span className="flex-1">{toast.texto}</span>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Fechar aviso"
+            className="text-lg leading-none opacity-60 hover:opacity-100 cursor-pointer"
+          >
+            ×
+          </button>
         </div>
+      )}
+
+      {/* Cabeçalho */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 tracking-tight"><img src="/logo.png" alt="Vaquejada Pro logo" className="h-8 w-8" />Secretaria & Emissão de Senhas</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Gestão de senhas individuais, pagamentos e liberação de Boi de Ouro
+        </p>
       </div>
 
-      {/* Navegação por Abas */}
-      <div className="flex border-b border-slate-200 gap-2 bg-white px-4 pt-2 rounded-t-xl border-t border-x">
-        <button
-          type="button"
-          onClick={() => setAbaAtiva('VENDAS')}
-          className={`py-3 px-5 font-bold text-sm border-b-2 transition cursor-pointer ${
-            abaAtiva === 'VENDAS'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          Venda de Senhas Individuais
-        </button>
-        <button
-          type="button"
-          onClick={() => setAbaAtiva('BOI_OURO')}
-          className={`py-3 px-5 font-bold text-sm border-b-2 transition cursor-pointer ${
-            abaAtiva === 'BOI_OURO'
-              ? 'border-slate-900 text-slate-900'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          Boi de Ouro (Esteira de Autorização)
-        </button>
+      {/* Abas */}
+      <div
+        role="tablist"
+        aria-label="Seções da secretaria"
+        className="flex border-b border-slate-200 gap-2 bg-white px-4 pt-2 rounded-t-xl border-t border-x"
+      >
+        {(
+          [
+            { id: 'VENDAS', rotulo: 'Venda de Senhas Individuais', badge: 0 },
+            { id: 'BOI_OURO', rotulo: 'Boi de Ouro (Esteira de Autorização)', badge: resumo.pendentes + resumo.aguardando },
+          ] as const
+        ).map((aba) => (
+          <button
+            key={aba.id}
+            type="button"
+            role="tab"
+            aria-selected={abaAtiva === aba.id}
+            onClick={() => setAbaAtiva(aba.id)}
+            className={`py-3 px-5 font-bold text-sm border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              abaAtiva === aba.id
+                ? 'border-slate-900 text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {aba.rotulo}
+            {aba.badge > 0 && (
+              <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
+                {aba.badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* Aba Vendas */}
+      {/* ============================ ABA VENDAS ============================ */}
       {abaAtiva === 'VENDAS' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
@@ -254,172 +440,216 @@ export default function SecretariaPage() {
               Formulário de Inscrição e Emissão
             </h2>
 
-            <form onSubmit={handleEmitirVenda} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Senha disponivel *
-                  </label>
-                  <select
-                    required
-                    value={senhaCodigo}
-                    onChange={(e) => setSenhaCodigo(e.target.value)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
+            <form onSubmit={handleEmitirVenda} className="space-y-5">
+              {/* 1. Senha: o mapa abre em painel próprio, o formulário fica limpo */}
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">1. Senha</h3>
+                <div
+                  className={`flex items-center justify-between gap-3 rounded-xl border-2 p-4 ${
+                    senhaCodigo ? 'border-slate-900 bg-slate-50' : 'border-dashed border-slate-300'
+                  }`}
+                >
+                  <div>
+                    {senhaCodigo ? (
+                      <>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Kit selecionado
+                        </div>
+                        <div className="text-3xl font-mono font-black text-slate-900 leading-tight">
+                          {senhaCodigo} - {codigoAltaDaSenhaSelecionada}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm font-bold text-slate-800">Nenhum kit selecionado</div>
+                        <div className="text-xs text-slate-500">Abra o mapa e escolha um kit disponível.</div>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMapaAberto(true)}
+                    className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-lg cursor-pointer shadow-sm whitespace-nowrap"
                   >
-                    <option value="">Selecione o numero da senha</option>
-                    {senhasDisponiveis.map((s: any) => (
-                      <option key={s.id} value={s.codigo}>
-                        {s.codigo} - {s.faixa_senha === 'BAIXA' ? 'Senha baixa' : 'Senha alta'}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {senhasDisponiveis.length} senhas disponiveis no estoque
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Canal de venda
-                  </label>
-                  <select
-                    value={canalVenda}
-                    onChange={(e) => setCanalVenda(e.target.value as any)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
-                  >
-                    <option value="PRESENCIAL">Presencial (Secretaria no Parque)</option>
-                    <option value="ANTECIPADA">Antecipada (Site / App)</option>
-                  </select>
+                    {senhaCodigo ? 'Trocar kit' : 'Escolher no mapa'}
+                  </button>
                 </div>
               </div>
 
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider -mb-2 pt-2 border-t border-slate-100">
+                2. Dupla e cavalo
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Nome do Puxador *
-                  </label>
+                <Campo id="puxador" label="Nome do Puxador" obrigatorio>
                   <input
+                    id="puxador"
                     type="text"
                     required
                     placeholder="Ex: Celso Vitório"
                     value={puxadorNome}
                     onChange={(e) => setPuxadorNome(e.target.value)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className={inputBase}
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Nome do Esteira *
-                  </label>
+                </Campo>
+                <Campo id="esteira" label="Nome do Esteira" obrigatorio>
                   <input
+                    id="esteira"
                     type="text"
                     required
                     placeholder="Ex: Juninho Vaqueiro"
                     value={esteiraNome}
                     onChange={(e) => setEsteiraNome(e.target.value)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className={inputBase}
                   />
-                </div>
+                </Campo>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Nome do cavalo *
-                  </label>
+                <Campo id="cavalo" label="Nome do Cavalo" obrigatorio>
                   <input
+                    id="cavalo"
                     type="text"
                     required
+                    placeholder="Nome do cavalo"
                     value={cavaloNome}
                     onChange={(e) => setCavaloNome(e.target.value)}
-                    placeholder="Nome do cavalo"
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+                    className={inputBase}
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Forma de pagamento *
-                  </label>
+                </Campo>
+                <Campo id="categoria" label="Categoria da Prova">
                   <select
-                    required
-                    value={formaPagamento}
-                    onChange={(e) => setFormaPagamento(e.target.value as any)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium"
-                  >
-                    <option value="PIX">PIX</option>
-                    <option value="DINHEIRO">Dinheiro</option>
-                    <option value="VALE">Vale</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Categoria da Prova
-                  </label>
-                  <select
+                    id="categoria"
                     value={categoria}
                     onChange={(e) => setCategoria(e.target.value)}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    className={inputBase}
                   >
                     <option value="PROFISSIONAL">Profissional</option>
                     <option value="AMADOR">Amador</option>
                     <option value="ASPIRANTE">Aspirante</option>
                     <option value="FEMININA">Feminina</option>
                   </select>
-                </div>
+                </Campo>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Valor Total (R$)
-                  </label>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider -mb-2 pt-2 border-t border-slate-100">
+                3. Venda e pagamento
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Campo id="canal" label="Canal de Venda">
+                  <select
+                    id="canal"
+                    value={canalVenda}
+                    onChange={(e) => setCanalVenda(e.target.value as CanalVenda)}
+                    className={inputBase}
+                  >
+                    <option value="PRESENCIAL">Presencial (Secretaria)</option>
+                    <option value="ANTECIPADA">Antecipada (Site / App)</option>
+                  </select>
+                </Campo>
+                <Campo id="pagamento" label="Forma de Pagamento" obrigatorio>
+                  <select
+                    id="pagamento"
+                    required
+                    value={formaPagamento}
+                    onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento)}
+                    className={inputBase}
+                  >
+                    <option value="PIX">PIX</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                    <option value="VALE">Vale</option>
+                  </select>
+                </Campo>
+                <Campo
+                  id="valor"
+                  label="Valor Total (R$)"
+                  dica={!valorVendaValido ? 'Informe um valor maior que zero.' : undefined}
+                >
                   <input
+                    id="valor"
                     type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
                     value={valorVenda}
-                    onChange={(e) => setValorVenda(Number(e.target.value))}
-                    className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    onChange={(e) => setValorVenda(e.target.value)}
+                    aria-invalid={!valorVendaValido}
+                    className={`${inputBase} font-bold ${!valorVendaValido ? 'border-red-400' : ''}`}
                   />
-                </div>
+                </Campo>
               </div>
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
-                <div>• A secretaria seleciona uma senha previamente cadastrada no estoque.</div>
-                <div>• Cada senha registra puxador, esteira, cavalo e forma de pagamento.</div>
-                <div>• A venda confirmada aloca 2 bois no <strong>Mapa da Pista</strong>.</div>
+                <div>• A secretaria seleciona um kit previamente cadastrado no estoque.</div>
+                <div>• Cada kit contém 2 senhas (uma baixa e uma alta) e registra puxador, esteira, cavalo e forma de pagamento.</div>
+                <div>
+                  • A venda confirmada aloca 2 bois para CADA senha do kit (4 bois no total).
+                </div>
               </div>
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition text-sm shadow-sm cursor-pointer"
+                disabled={enviandoVenda || !senhaCodigo}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition text-sm shadow-sm cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
               >
-                {loading ? 'Processando venda...' : 'Confirmar venda da senha'}
+                {enviandoVenda
+                  ? 'Processando venda...'
+                  : senhaCodigo
+                  ? `Confirmar venda do kit ${senhaCodigo}-${codigoAltaDaSenhaSelecionada} — ${valorVendaValido ? brl.format(valorVendaNumero * 2) : '—'}`
+                  : 'Selecione um kit para continuar'}
               </button>
             </form>
+
+            {/* Senha Map Modal */}
+            {mapaAberto && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-lg font-bold text-slate-900">Selecionar Kit</h3>
+                    <button
+                      onClick={() => setMapaAberto(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <SenhaMap
+                    onSenhaSelect={setSenhaCodigo}
+                    selectedSenha={senhaCodigo ?? null}
+                    vaquejadaId="vq-2026-portal"
+                    faixaBaixa={[1, 200]}
+                    faixaAlta={[800, 999]}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Painel Lateral com Confirmação da Venda */}
+          {/* Painel lateral */}
           <div className="lg:col-span-5 space-y-4">
             {retornoVenda ? (
               <div className="bg-white border-2 border-emerald-500 rounded-xl p-5 shadow-sm space-y-3">
                 <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  Venda Emitida com Sucesso
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Venda emitida com sucesso
                 </div>
                 <div className="text-xs text-slate-600 space-y-2">
-                  <p>{retornoVenda.mensagem}</p>
+                  {retornoVenda.mensagem && <p>{retornoVenda.mensagem}</p>}
                   {retornoVenda.kit && (
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                       <strong>Código do Kit:</strong> {retornoVenda.kit.codigo}
                     </div>
                   )}
-                  {retornoVenda.senhas && (
+                  {Array.isArray(retornoVenda.senhas) && (
                     <div className="space-y-1.5">
-                      <strong className="block text-slate-800">Senhas Geradas:</strong>
+                      <strong className="block text-slate-800">Senhas geradas:</strong>
                       {retornoVenda.senhas.map((s: any, idx: number) => (
-                        <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex justify-between font-mono text-xs">
-                          <span className="font-bold text-slate-900">Senha {idx + 1}: {s.codigo}</span>
+                        <div
+                          key={s.codigo ?? idx}
+                          className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 flex justify-between font-mono text-xs"
+                        >
+                          <span className="font-bold text-slate-900">
+                            Senha {idx + 1}: {s.codigo}
+                          </span>
                           <span className="text-slate-500">2 bois alocados</span>
                         </div>
                       ))}
@@ -427,134 +657,178 @@ export default function SecretariaPage() {
                   )}
                   {retornoVenda.senha && (
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 font-mono text-xs font-bold text-slate-900">
-                      Senha Solteira: {retornoVenda.senha.codigo} (2 bois alocados)
+                      Senha solteira: {retornoVenda.senha.codigo} (2 bois alocados)
                     </div>
                   )}
                 </div>
-                <a
-                  href="/mapa"
-                  className="block text-center py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition"
-                >
-                  Visualizar no Mapa da Pista &rarr;
-                </a>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRetornoVenda(null)}
+                    className="py-2.5 border border-slate-300 hover:bg-slate-50 text-slate-800 font-bold rounded-lg text-xs transition cursor-pointer"
+                  >
+                    Nova venda
+                  </button>
+                  <a
+                    href="/mapa"
+                    className="block text-center py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition"
+                  >
+                    Ver no Mapa da Pista &rarr;
+                  </a>
+                </div>
               </div>
             ) : (
-              <div className="bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-400 text-xs shadow-sm">
-                Selecione uma senha disponível para registrar a venda e os dados da dupla.
+              <div className="bg-white p-8 rounded-xl border border-dashed border-slate-300 text-center text-slate-400 text-xs shadow-sm">
+                Selecione um kit disponível para registrar a venda e os dados da dupla.
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Aba Boi de Ouro */}
+      {/* =========================== ABA BOI DE OURO ========================= */}
       {abaAtiva === 'BOI_OURO' && (
         <div className="space-y-4">
+          {/* Resumo */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <CartaoResumo
+              titulo="Pagamento pendente"
+              valor={resumo.pendentes}
+              classe="bg-amber-50 border-amber-200 text-amber-900"
+            />
+            <CartaoResumo
+              titulo="Aguardando autorização"
+              valor={resumo.aguardando}
+              classe="bg-blue-50 border-blue-200 text-blue-900"
+            />
+            <CartaoResumo
+              titulo="Liberados no mapa"
+              valor={resumo.noMapa}
+              classe="bg-emerald-50 border-emerald-200 text-emerald-900"
+            />
+          </div>
+
+          {/* Solicitar */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h2 className="text-sm font-bold text-slate-900 mb-2">
-              Solicitar Boi de Ouro
-            </h2>
+            <h2 className="text-sm font-bold text-slate-900 mb-2">Solicitar Boi de Ouro</h2>
             <form onSubmit={handleSolicitarBoiOuro} className="flex flex-col sm:flex-row gap-2 max-w-xl">
               <input
                 type="text"
-                placeholder="ID ou Código da Senha de Origem (Ex: sn-001)..."
+                aria-label="ID ou código da senha de origem"
+                placeholder="ID ou código da senha de origem (ex: sn-001)"
                 value={senhaOrigemId}
                 onChange={(e) => setSenhaOrigemId(e.target.value)}
-                className="flex-1 text-xs bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                className={`${inputBase} flex-1 text-xs py-2`}
               />
               <button
                 type="submit"
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm transition"
+                disabled={enviandoSolicitacao}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer shadow-sm transition disabled:bg-slate-300 disabled:cursor-not-allowed"
               >
-                Registrar Solicitação
+                {enviandoSolicitacao ? 'Registrando...' : 'Registrar solicitação'}
               </button>
             </form>
           </div>
 
+          {/* Tabela */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Solicitações de Boi de Ouro
-            </div>
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Solicitações de Boi de Ouro
+                <span className="ml-2 text-slate-400 normal-case font-medium">
+                  ({boisFiltrados.length} de {boisOuro.length})
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="search"
+                  aria-label="Buscar solicitações"
+                  placeholder="Buscar senha, competidor ou boi..."
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  className={`${inputBase} text-xs py-1.5 sm:w-64`}
+                />
+                <select
+                  aria-label="Filtrar por situação"
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value as FiltroBoi)}
+                  className={`${inputBase} text-xs py-1.5 sm:w-auto`}
+                >
+                  <option value="TODOS">Todas as situações</option>
+                  <option value="PENDENTE_PAGAMENTO">Pagamento pendente</option>
+                  <option value="AGUARDANDO_AUTORIZACAO">Aguardando autorização</option>
+                  <option value="NO_MAPA">Liberados no mapa</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={carregarBoisOuro}
+                  disabled={carregandoLista}
+                  className="px-3 py-1.5 border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 rounded-lg cursor-pointer disabled:opacity-50"
+                >
+                  {carregandoLista ? 'Atualizando...' : 'Atualizar'}
+                </button>
+              </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="bg-slate-50/50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
-                    <th className="py-3 px-4">Senha Origem</th>
-                    <th className="py-3 px-4">Competidor</th>
-                    <th className="py-3 px-4">Boi Alocado</th>
-                    <th className="py-3 px-4">Valor</th>
-                    <th className="py-3 px-4">Pagamento</th>
-                    <th className="py-3 px-4">Situação</th>
-                    <th className="py-3 px-4 text-right">Ação</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {boisOuro.map((bo) => (
-                    <tr key={bo.id} className="hover:bg-slate-50">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                        {bo.senha_codigo || bo.senha_origem_id}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-800">{bo.puxador_nome || 'Competidor'}</div>
-                        <div className="text-slate-400">Esteira: {bo.esteira_nome || '-'}</div>
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-700">
-                        {bo.boi_nome} ({bo.boi_numero_registro})
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-900">
-                        R$ {((bo.valor_centavos || 20000) / 100).toFixed(2)}
-                      </td>
-                      <td className="py-3 px-4">
-                        {bo.pago ? (
-                          <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            Confirmado ({bo.referencia_pagamento})
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleConfirmarPagamentoBoiOuro(bo.id)}
-                            className="bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded border border-amber-200 cursor-pointer"
-                          >
-                            Confirmar Pagamento
-                          </button>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`font-semibold px-2 py-0.5 rounded ${
-                            bo.estado === 'NO_MAPA'
-                              ? 'bg-slate-100 text-slate-800'
-                              : bo.estado === 'PAGO_AGUARDANDO_AUTORIZACAO'
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {bo.estado === 'NO_MAPA' ? 'Liberado no Mapa' : bo.estado.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {bo.estado !== 'NO_MAPA' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAutorizarSecretariaBoiOuro(bo.id)}
-                            disabled={!bo.pago}
-                            className={`px-3 py-1 font-bold rounded transition cursor-pointer ${
-                              bo.pago
-                                ? 'bg-slate-900 hover:bg-slate-800 text-white'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase">
+                      <th scope="col" className="py-3 px-4">Senha origem</th>
+                      <th scope="col" className="py-3 px-4">Competidor</th>
+                      <th scope="col" className="py-3 px-4">Boi alocado</th>
+                      <th scope="col" className="py-3 px-4">Status</th>
+                      <th scope="col" className="py-3 px-4">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boisFiltrados.map((boi) => (
+                      <tr key={boi.id} className="border-b border-slate-200 hover:bg-slate-50">
+                        <td className="py-3 px-4 text-slate-700 font-mono">{boi.senha_origem_id}</td>
+                        <td className="py-3 px-4 text-slate-700">{boi.puxador_nome}</td>
+                        <td className="py-3 px-4 text-slate-700 font-mono">
+                          #{boi.boi_numero_registro} - {boi.boi_nome}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-bold ${
+                              situacaoBoi(boi).classe
                             }`}
                           >
-                            Autorizar no Mapa
-                          </button>
-                        ) : (
-                          <span className="text-emerald-700 font-bold">No Mapa</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                            {situacaoBoi(boi).rotulo}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 flex space-x-2">
+                          {!boi.pago && (
+                            <button
+                              onClick={() => abrirModalPagamento(boi)}
+                              disabled={acaoEmAndamento === boi.id}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-shadow"
+                            >
+                              Pagar
+                            </button>
+                          )}
+                          {boi.pago && !boi.autorizado_por && (
+                            <button
+                              onClick={() => setAutorizacaoModal(boi)}
+                              disabled={acaoEmAndamento === boi.id}
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition-shadow"
+                            >
+                              Autorizar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {boisFiltrados.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-4 text-center text-slate-500">
+                          Nenhuma solicitação encontrada
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

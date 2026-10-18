@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '../../../lib/db';
+import { query, pool } from '../../../lib/db';
 import { validateRolePermission } from '../../../lib/api-auth';
 import { registrarAuditoria } from '../../../lib/audit';
 
@@ -106,6 +106,40 @@ export async function POST(request: NextRequest) {
       finalKitId = kitCheck.rows[0]?.id || 'kit-default';
     }
 
+    // Validação de Dupla Duplicada configurável (Item 5)
+    if (puxadorNome && esteiraNome && puxadorNome !== 'Não informado' && esteiraNome !== 'Não informado') {
+      const vaqConfig = await query(
+        `SELECT COALESCE(permitir_dupla_multiplas_senhas, true) as permitir_multiplas 
+         FROM vaquejadas 
+         WHERE id = $1`,
+        [vaquejadaId]
+      );
+      const permitirMultiplas = vaqConfig.rows[0]?.permitir_multiplas ?? true;
+
+      if (!permitirMultiplas) {
+        const duplaCheck = await query(
+          `SELECT id, codigo 
+           FROM senhas 
+           WHERE LOWER(TRIM(puxador_nome)) = LOWER(TRIM($1))
+             AND LOWER(TRIM(esteira_nome)) = LOWER(TRIM($2))
+             AND categoria = $3
+             AND (vaquejada_id = $4 OR vaquejada_id IS NULL)
+             AND status = 'ATIVA'
+             AND estado_comercial = 'PAGA'`,
+          [puxadorNome, esteiraNome, categoria, vaquejadaId]
+        );
+
+        if (duplaCheck.rowCount && duplaCheck.rowCount > 0) {
+          return NextResponse.json(
+            {
+              error: `Regra do evento: A dupla ${puxadorNome} & ${esteiraNome} já possui inscrição ativa nesta vaquejada na categoria ${categoria} (Senha ${duplaCheck.rows[0].codigo}).`
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
     const res = await query(
       `INSERT INTO senhas (
         id, kit_id, vaquejada_id, codigo, boi1_id, boi2_id, 
@@ -183,6 +217,31 @@ export async function PUT(request: NextRequest) {
       motivoAlteracao = 'Ajuste operacional de rotina'
     } = body;
 
+    // Validação de Dupla Duplicada no PUT (Item 5)
+    if (puxadorNome && esteiraNome && puxadorNome !== 'Não informado' && esteiraNome !== 'Não informado') {
+      const duplaCheck = await query(
+        `SELECT id, codigo 
+         FROM senhas 
+         WHERE LOWER(TRIM(puxador_nome)) = LOWER(TRIM($1))
+           AND LOWER(TRIM(esteira_nome)) = LOWER(TRIM($2))
+           AND categoria = $3
+           AND (vaquejada_id = $4 OR vaquejada_id IS NULL)
+           AND status = 'ATIVA'
+           AND estado_comercial = 'PAGA'
+           AND id != $5`,
+        [puxadorNome, esteiraNome, categoria, antigaSenha.vaquejada_id, id]
+      );
+
+      if (duplaCheck.rowCount && duplaCheck.rowCount > 0) {
+        return NextResponse.json(
+          {
+            error: `A dupla ${puxadorNome} & ${esteiraNome} já possui inscrição ativa nesta vaquejada na categoria ${categoria} (Senha ${duplaCheck.rows[0].codigo}).`
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const res = await query(
       `UPDATE senhas
        SET puxador_nome = $1,
@@ -222,40 +281,142 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE /api/senhas - Cancelamento com auditoria
+// DELETE /api/senhas - Cancelamento com transação, validação de pista e auditoria
 export async function DELETE(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
+  const motivo = searchParams.get('motivo');
+  const operadorNome = searchParams.get('operadorNome') || request.headers.get('x-user-nome') || 'Gestor Operacional';
+  const role = (request.headers.get('x-user-role') || searchParams.get('role') || 'SECRETARIA').toUpperCase();
 
-    if (!id) {
-      return NextResponse.json({ error: 'ID da senha é obrigatório' }, { status: 400 });
+  if (!id) {
+    return NextResponse.json({ error: 'ID da senha é obrigatório' }, { status: 400 });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const senhaRes = await client.query('SELECT * FROM senhas WHERE id = $1 FOR UPDATE', [id]);
+    if (senhaRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({ error: 'Senha não encontrada' }, { status: 404 });
+    }
+    const senha = senhaRes.rows[0];
+
+    // Verificar corridas associadas na pista
+    const corridasRes = await client.query(
+      'SELECT id, ordem_mapa, boi_numero, estado, estado_julgamento FROM corridas_mapa WHERE senha_id = $1',
+      [id]
+    );
+    const corridas = corridasRes.rows;
+
+    const temCorridaEmExecucao = corridas.some((c: any) => c.estado === 'EM_EXECUCAO');
+    if (temCorridaEmExecucao) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Não é possível cancelar uma senha cuja corrida está EM_EXECUCAO na pista.' },
+        { status: 409 }
+      );
     }
 
-    const res = await query(
+    const temCorridaConcluida = corridas.some((c: any) => c.estado === 'CONCLUIDA');
+    if (temCorridaConcluida) {
+      if (role !== 'ADMIN') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Apenas administradores possuem autorização para cancelar senhas com corridas já concluídas na pista.' },
+          { status: 403 }
+        );
+      }
+
+      if (!motivo || motivo.trim().length < 5 || motivo.trim() === 'Cancelamento formal de inscrição') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Para cancelar uma senha com corridas já concluídas na pista, o administrador deve informar um motivo/justificativa detalhado (mínimo 5 caracteres).' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const motivoFinal = motivo?.trim() || 'Cancelamento formal de inscrição';
+
+    // 1. Atualizar senha para CANCELADA
+    await client.query(
       `UPDATE senhas 
        SET status = 'CANCELADA', estado_comercial = 'CANCELADA', atualizado_em = CURRENT_TIMESTAMP 
-       WHERE id = $1 RETURNING *`,
+       WHERE id = $1`,
       [id]
     );
 
-    if (res.rows.length === 0) {
-      return NextResponse.json({ error: 'Senha não encontrada' }, { status: 404 });
+    // 2. Desativar/Remover corridas associadas em corridas_mapa que ainda não foram concluídas
+    const corridasCanceladasRes = await client.query(
+      `UPDATE corridas_mapa 
+       SET estado = 'CANCELADA', estado_julgamento = 'ANULADO', concluida_em = CURRENT_TIMESTAMP
+       WHERE senha_id = $1 AND estado != 'CONCLUIDA'
+       RETURNING id, ordem_mapa, boi_numero, estado`,
+      [id]
+    );
+
+    // 3. Estorno financeiro: Atualizar pagamentos associados para ESTORNADO se houver
+    const pagamentosAtualizados = await client.query(
+      `UPDATE pagamentos
+       SET status = 'ESTORNADO'
+       WHERE senha_id = $1 AND status = 'CONFIRMADO'
+       RETURNING id, valor_centavos`,
+      [id]
+    );
+
+    // Se a senha estava paga mas não havia registro em pagamentos, registrar estorno explícito
+    if (pagamentosAtualizados.rowCount === 0 && senha.estado_comercial === 'PAGA' && (senha.valor_centavos || 0) > 0) {
+      await client.query(
+        `INSERT INTO pagamentos (id, senha_id, tipo, valor_centavos, status, comprovante_detalhes)
+         VALUES ($1, $2, 'ESTORNO', $3, 'ESTORNADO', $4)`,
+        [
+          `estorno-${crypto.randomUUID().slice(0, 8)}`,
+          id,
+          senha.valor_centavos,
+          `Estorno gerado por cancelamento de senha: ${motivoFinal}`
+        ]
+      );
     }
 
+    await client.query('COMMIT');
+
+    // 4. Registrar na auditoria
     await registrarAuditoria({
-      usuarioNome: 'Gestor Operacional',
-      papel: 'ADMIN',
-      acao: 'CANCELAR_SENHA',
+      usuarioNome: operadorNome,
+      papel: role,
+      acao: temCorridaConcluida ? 'CANCELAR_SENHA_COM_CORRIDA_CONCLUIDA' : 'CANCELAR_SENHA_COM_MAPA',
       entidade: 'senhas',
       entidadeId: id,
-      detalhes: { codigo: res.rows[0].codigo },
-      motivo: 'Cancelamento formal de senha pelo gestor'
+      detalhes: {
+        codigo: senha.codigo,
+        puxador: senha.puxador_nome,
+        temCorridaConcluida,
+        corridasDesativadas: corridasCanceladasRes.rows,
+        totalCorridasDesativadas: corridasCanceladasRes.rowCount,
+        estornoFinanceiro: pagamentosAtualizados.rowCount ? pagamentosAtualizados.rows : 'Estorno avulso gerado',
+      },
+      motivo: motivoFinal,
     });
 
-    return NextResponse.json({ success: true, message: 'Senha cancelada com sucesso' });
+    return NextResponse.json({
+      success: true,
+      message: `Senha ${senha.codigo} cancelada com sucesso.${temCorridaConcluida ? ' (Atenção: Senha continha corrida concluída cancelada por ADMIN).' : ''} ${corridasCanceladasRes.rowCount} corrida(s) foram retiradas da fila do mapa de pista.`,
+      corridasCanceladas: corridasCanceladasRes.rowCount,
+      temCorridaConcluida,
+    });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {}
     console.error('Erro ao cancelar senha:', error);
-    return NextResponse.json({ error: 'Erro ao cancelar senha' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Falha interna ao cancelar senha' },
+      { status: 500 }
+    );
+  } finally {
+    client.release();
   }
 }

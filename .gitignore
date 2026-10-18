@@ -5,3 +5,6 @@ remotion-showcase/
 vaquejada-showcase/
 brag-output/
 *.env
+.env*
+.DS_Store
+*.tsbuildinfo

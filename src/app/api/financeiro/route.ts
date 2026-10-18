@@ -19,29 +19,57 @@ export async function GET() {
     );
 
     const pagamentosRes = await query(
-      `SELECT * FROM pagamentos ORDER BY criado_em DESC`
+      `SELECT p.id, p.senha_id, p.tipo, p.valor_centavos, p.status, p.referencia_externa, 
+              p.comprovante_detalhes, p.confirmado_em, p.criado_em,
+              s.codigo AS senha_codigo, s.puxador_nome, s.categoria
+       FROM pagamentos p
+       LEFT JOIN senhas s ON p.senha_id = s.id
+       ORDER BY p.criado_em DESC`
     );
 
     // Calcular totais em centavos inteiros (RN-08)
-    const totalSenhasPagas = senhasRes.rows
-      .filter((s: any) => s.estado_comercial === 'PAGA')
-      .reduce((acc: number, curr: any) => acc + (curr.valor_centavos || 0), 0);
+    const pagamentosConfirmados = pagamentosRes.rows.filter((p: any) => p.status === 'CONFIRMADO');
+    const pagamentosEstornados = pagamentosRes.rows.filter((p: any) => p.status === 'ESTORNADO');
+
+    const totalPagamentosConfirmados = pagamentosConfirmados.reduce(
+      (acc: number, curr: any) => acc + (curr.valor_centavos || 0),
+      0
+    );
+
+    const totalEstornadoCentavos = pagamentosEstornados.reduce(
+      (acc: number, curr: any) => acc + (curr.valor_centavos || 0),
+      0
+    );
 
     const totalBoisOuroPagos = bdoRes.rows
       .filter((b: any) => b.pago)
       .reduce((acc: number, curr: any) => acc + (curr.valor_centavos || 0), 0);
 
+    // Se houver senhas marcadas como PAGA sem pagamento explícito na tabela pagamentos,
+    // garantimos consistência contábil somando a diferença
+    const totalSenhasPagasAtivas = senhasRes.rows
+      .filter((s: any) => s.estado_comercial === 'PAGA')
+      .reduce((acc: number, curr: any) => acc + (curr.valor_centavos || 0), 0);
+
+    const totalBrutoRecebidoCentavos = Math.max(totalPagamentosConfirmados + totalBoisOuroPagos, totalSenhasPagasAtivas + totalBoisOuroPagos);
+    const saldoLiquidoCentavos = totalBrutoRecebidoCentavos - totalEstornadoCentavos;
+
     return NextResponse.json({
       resumo: {
-        totalRecebidoCentavos: totalSenhasPagas + totalBoisOuroPagos,
-        totalSenhasPagasCentavos: totalSenhasPagas,
+        totalRecebidoCentavos: totalBrutoRecebidoCentavos,
+        totalBrutoRecebidoCentavos,
+        totalEstornadoCentavos,
+        saldoLiquidoCentavos,
+        totalSenhasPagasCentavos: totalSenhasPagasAtivas,
         totalBoisOuroCentavos: totalBoisOuroPagos,
         qtdSenhas: senhasRes.rows.length,
         qtdBoisOuro: bdoRes.rows.length,
+        qtdEstornos: pagamentosEstornados.length,
+        qtdPagamentos: pagamentosRes.rows.length,
       },
       senhas: senhasRes.rows,
       boisOuro: bdoRes.rows,
-      pagamentos: pagamentosRes.rows
+      pagamentos: pagamentosRes.rows,
     });
   } catch (error) {
     console.error('Erro na API financeira:', error);
@@ -49,12 +77,86 @@ export async function GET() {
   }
 }
 
-// POST /api/financeiro - Registrar pagamento manual ou baixa (RN-08, CA-03)
+// POST /api/financeiro - Registrar pagamento manual, baixa ou estorno
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { senhaId, tipo = 'MANUAL', valorCentavos, referencia, operadorNome = 'Operador Financeiro' } = body;
+    const { 
+      acao = 'RECEBIMENTO',
+      pagamentoId,
+      senhaId, 
+      tipo = 'MANUAL', 
+      valorCentavos, 
+      referencia, 
+      motivo,
+      operadorNome = 'Operador Financeiro' 
+    } = body;
 
+    // Fluxo de ESTORNO manual
+    if (acao === 'ESTORNO') {
+      if (!pagamentoId && !senhaId) {
+        return NextResponse.json(
+          { error: 'ID do pagamento ou da senha é obrigatório para estorno' },
+          { status: 400 }
+        );
+      }
+
+      if (!motivo || motivo.trim().length < 5) {
+        return NextResponse.json(
+          { error: 'Motivo do estorno é obrigatório (mínimo 5 caracteres)' },
+          { status: 400 }
+        );
+      }
+
+      let queryText = '';
+      let params = [];
+
+      if (pagamentoId) {
+        queryText = `UPDATE pagamentos SET status = 'ESTORNADO', comprovante_detalhes = COALESCE(comprovante_detalhes, '') || ' | ' || $1 WHERE id = $2 RETURNING *`;
+        params = [`Estorno: ${motivo}`, pagamentoId];
+      } else {
+        queryText = `UPDATE pagamentos SET status = 'ESTORNADO', comprovante_detalhes = COALESCE(comprovante_detalhes, '') || ' | ' || $1 WHERE senha_id = $2 AND status = 'CONFIRMADO' RETURNING *`;
+        params = [`Estorno: ${motivo}`, senhaId];
+      }
+
+      const resUpdate = await query(queryText, params);
+      if (resUpdate.rowCount === 0) {
+        return NextResponse.json(
+          { error: 'Nenhum pagamento confirmado encontrado para estorno' },
+          { status: 404 }
+        );
+      }
+
+      // Se a senha foi vinculada, atualizar estado comercial da senha para ESTORNADA/CANCELADA
+      const targetSenhaId = resUpdate.rows[0].senha_id;
+      if (targetSenhaId) {
+        await query(
+          `UPDATE senhas SET estado_comercial = 'CANCELADA', status = 'CANCELADA', atualizado_em = CURRENT_TIMESTAMP WHERE id = $1`,
+          [targetSenhaId]
+        );
+      }
+
+      await registrarAuditoria({
+        usuarioNome: operadorNome,
+        papel: 'FINANCEIRO',
+        acao: 'ESTORNO_PAGAMENTO_REGISTRADO',
+        entidade: 'pagamentos',
+        entidadeId: resUpdate.rows[0].id,
+        detalhes: {
+          pagamento: resUpdate.rows[0],
+          motivo,
+        },
+        motivo,
+      });
+
+      return NextResponse.json({
+        success: true,
+        mensagem: 'Estorno realizado com sucesso',
+        pagamento: resUpdate.rows[0],
+      });
+    }
+
+    // Fluxo de RECEBIMENTO manual
     if (!senhaId || !referencia) {
       return NextResponse.json({ error: 'Senha e referência/comprovante são obrigatórios (RN-08)' }, { status: 400 });
     }
@@ -83,7 +185,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, id, mensagem: 'Pagamento manual registrado com sucesso' });
   } catch (error) {
-    console.error('Erro ao registrar pagamento:', error);
-    return NextResponse.json({ error: 'Erro ao registrar pagamento' }, { status: 500 });
+    console.error('Erro ao registrar operação financeira:', error);
+    return NextResponse.json({ error: 'Erro ao processar operação financeira' }, { status: 500 });
   }
 }
