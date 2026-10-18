@@ -72,9 +72,42 @@ export async function POST(request: Request) {
       );
     }
 
-    const puxadorNome = String(body.puxadorNome || '').trim();
-    const esteiraNome = String(body.esteiraNome || '').trim();
-    const cavaloNome = String(body.cavaloNome || '').trim();
+    let puxadorNome = String(body.puxadorNome || '').trim();
+    let esteiraNome = String(body.esteiraNome || '').trim();
+    let cavaloNome = String(body.cavaloNome || '').trim();
+    let puxadorId = body.puxadorId || body.puxador_id ? String(body.puxadorId || body.puxador_id).trim() : null;
+    let esteiraId = body.esteiraId || body.esteira_id ? String(body.esteiraId || body.esteira_id).trim() : null;
+    let cavaloPuxaId = body.cavaloPuxaId || body.cavalo_puxa_id || body.cavaloId || body.cavalo_id ? String(body.cavaloPuxaId || body.cavalo_puxa_id || body.cavaloId || body.cavalo_id).trim() : null;
+    let cavaloEsteiraId = body.cavaloEsteiraId || body.cavalo_esteira_id ? String(body.cavaloEsteiraId || body.cavalo_esteira_id).trim() : null;
+
+    // Se passou ID de competidor mas nome está vazio, recupera nome do cadastro
+    if (puxadorId && !puxadorNome) {
+      const compPuxa = await client.query('SELECT nome FROM competidores WHERE id = $1', [puxadorId]);
+      if (compPuxa.rowCount && compPuxa.rowCount > 0) puxadorNome = compPuxa.rows[0].nome;
+    }
+    if (esteiraId && !esteiraNome) {
+      const compEsteira = await client.query('SELECT nome FROM competidores WHERE id = $1', [esteiraId]);
+      if (compEsteira.rowCount && compEsteira.rowCount > 0) esteiraNome = compEsteira.rows[0].nome;
+    }
+    if (cavaloPuxaId && !cavaloNome) {
+      const cavPuxa = await client.query('SELECT nome FROM cavalos WHERE id = $1', [cavaloPuxaId]);
+      if (cavPuxa.rowCount && cavPuxa.rowCount > 0) cavaloNome = cavPuxa.rows[0].nome;
+    }
+
+    // Se passou nome mas não passou ID, tenta associar automaticamente se houver competidor/cavalo cadastrado com esse nome
+    if (!puxadorId && puxadorNome) {
+      const findPuxa = await client.query('SELECT id FROM competidores WHERE LOWER(nome) = LOWER($1)', [puxadorNome]);
+      if (findPuxa.rowCount && findPuxa.rowCount > 0) puxadorId = findPuxa.rows[0].id;
+    }
+    if (!esteiraId && esteiraNome) {
+      const findEsteira = await client.query('SELECT id FROM competidores WHERE LOWER(nome) = LOWER($1)', [esteiraNome]);
+      if (findEsteira.rowCount && findEsteira.rowCount > 0) esteiraId = findEsteira.rows[0].id;
+    }
+    if (!cavaloPuxaId && cavaloNome) {
+      const findCavalo = await client.query('SELECT id FROM cavalos WHERE LOWER(nome) = LOWER($1)', [cavaloNome]);
+      if (findCavalo.rowCount && findCavalo.rowCount > 0) cavaloPuxaId = findCavalo.rows[0].id;
+    }
+
     const categoria = String(body.categoria || 'PROFISSIONAL').trim().toUpperCase();
     const canalVenda = body.canalVenda === 'ANTECIPADA' ? 'ANTECIPADA' : 'PRESENCIAL';
     const formaPagamento = String(body.formaPagamento || 'PIX').toUpperCase();
@@ -88,6 +121,7 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
     if (!esteiraNome) {
       return NextResponse.json(
         { error: 'O nome do esteireiro é obrigatório.' },
@@ -253,8 +287,12 @@ export async function POST(request: Request) {
              boi2_id = $8,
              usada_em = CURRENT_TIMESTAMP,
              atualizado_em = CURRENT_TIMESTAMP,
-             vaquejada_id = $9
-         WHERE id = $10`,
+             vaquejada_id = $9,
+             puxador_id = $10,
+             esteira_id = $11,
+             cavalo_puxa_id = $12,
+             cavalo_esteira_id = $13
+         WHERE id = $14`,
         [
           puxadorNome,
           esteiraNome,
@@ -265,6 +303,10 @@ export async function POST(request: Request) {
           boi1,
           boi2,
           vaquejadaId,
+          puxadorId,
+          esteiraId,
+          cavaloPuxaId,
+          cavaloEsteiraId,
           s.id,
         ]
       );
@@ -275,11 +317,15 @@ export async function POST(request: Request) {
         puxadorNome,
         esteiraNome,
         cavaloNome,
+        puxadorId,
+        esteiraId,
+        cavaloPuxaId,
         categoria,
         valorCentavos: valorUnitarioCentavos,
         boi1,
         boi2,
       });
+
 
       // Gerar corridas correspondentes no mapa
       const maxOrdemRes = await client.query(

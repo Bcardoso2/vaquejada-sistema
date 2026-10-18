@@ -29,6 +29,8 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
   '/vaquejadas': ['ADMIN'],
   '/kits': ['ADMIN'],
   '/oportunidades': ['ADMIN'],
+  '/competidores': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'],
+  '/cavalos': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'],
   '/senhas': ['ADMIN', 'SECRETARIA'],
   '/bois-ouro': ['ADMIN', 'SECRETARIA'],
   '/secretaria': ['ADMIN', 'SECRETARIA'],
@@ -42,6 +44,8 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
 const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/usuarios', roles: ['ADMIN'] },
   { prefixo: '/api/auditoria', roles: ['ADMIN'] },
+  { prefixo: '/api/competidores', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
+  { prefixo: '/api/cavalos', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/bois-ouro', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/bois', roles: ['ADMIN'] },
   { prefixo: '/api/vaquejadas', roles: ['ADMIN'] },
@@ -57,6 +61,7 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/resultados-senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/resultados', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
 ];
+
 
 
 export async function middleware(request: NextRequest) {

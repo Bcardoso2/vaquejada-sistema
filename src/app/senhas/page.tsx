@@ -70,6 +70,9 @@ export default function SenhasPage() {
   const [novoBoi2, setNovoBoi2] = useState('');
   const [salvandoNovo, setSalvandoNovo] = useState(false);
 
+  const [competidores, setCompetidores] = useState<{ id: string; nome: string; apelido_pista?: string }[]>([]);
+  const [cavalos, setCavalos] = useState<{ id: string; nome: string; tipo: string }[]>([]);
+
   useEffect(() => {
     carregarDados();
   }, []);
@@ -78,9 +81,11 @@ export default function SenhasPage() {
     setLoading(true);
     setError(null);
     try {
-      const [resSenhas, resBois] = await Promise.all([
+      const [resSenhas, resBois, resComp, resCav] = await Promise.all([
         fetch('/api/senhas?limit=200'),
-        fetch('/api/bois')
+        fetch('/api/bois'),
+        fetch('/api/competidores?ativo=true'),
+        fetch('/api/cavalos?ativo=true')
       ]);
 
       if (!resSenhas.ok) throw new Error('Falha ao buscar lista de senhas');
@@ -91,12 +96,21 @@ export default function SenhasPage() {
         const dadosBois = await resBois.json();
         setBois(Array.isArray(dadosBois) ? dadosBois : []);
       }
+      if (resComp.ok) {
+        const dadosComp = await resComp.json();
+        if (Array.isArray(dadosComp)) setCompetidores(dadosComp);
+      }
+      if (resCav.ok) {
+        const dadosCav = await resCav.json();
+        if (Array.isArray(dadosCav)) setCavalos(dadosCav);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
   };
+
 
   // Filtragem
   const senhasFiltradas = useMemo(() => {
@@ -470,17 +484,34 @@ export default function SenhasPage() {
                           </div>
                         </td>
 
-                        {/* Puxador e Esteira */}
+                        {/* Puxador, Esteira e Cavalo */}
                         <td className="py-3 px-4">
                           <div className="text-slate-900 font-medium">
                             <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Puxador:</span>
                             {s.puxador_nome || <span className="text-slate-400 italic">Não informado</span>}
+                            {(s as any).puxador_apelido && (
+                              <span className="text-slate-500 text-[11px] ml-1 font-normal font-sans">
+                                "{(s as any).puxador_apelido}"
+                              </span>
+                            )}
                           </div>
                           <div className="text-slate-600 mt-0.5">
                             <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Esteira:</span>
                             {s.esteira_nome || <span className="text-slate-400 italic">Não informado</span>}
+                            {(s as any).esteira_apelido && (
+                              <span className="text-slate-500 text-[11px] ml-1 font-normal font-sans">
+                                "{(s as any).esteira_apelido}"
+                              </span>
+                            )}
                           </div>
+                          {((s as any).cavalo_oficial_nome || (s as any).cavalo_nome) && (
+                            <div className="text-slate-500 text-[11px] mt-0.5 flex items-center gap-1">
+                              <span>🐎</span>
+                              <span>{(s as any).cavalo_oficial_nome || (s as any).cavalo_nome}</span>
+                            </div>
+                          )}
                         </td>
+
 
                         {/* Categoria */}
                         <td className="py-3 px-4">
@@ -583,6 +614,14 @@ export default function SenhasPage() {
             </div>
 
             <form onSubmit={handleSalvarEdicao} className="p-6 space-y-4 text-xs">
+              <datalist id="lista-competidores-senhas">
+                {competidores.map((c) => (
+                  <option key={c.id} value={c.nome}>
+                    {c.apelido_pista ? `"${c.apelido_pista}"` : ''}
+                  </option>
+                ))}
+              </datalist>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -590,10 +629,11 @@ export default function SenhasPage() {
                   </label>
                   <input
                     type="text"
+                    list="lista-competidores-senhas"
                     value={formPuxador}
                     onChange={(e) => setFormPuxador(e.target.value)}
                     required
-                    placeholder="Nome do puxador"
+                    placeholder="Selecione ou digite..."
                     className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                 </div>
@@ -604,14 +644,16 @@ export default function SenhasPage() {
                   </label>
                   <input
                     type="text"
+                    list="lista-competidores-senhas"
                     value={formEsteira}
                     onChange={(e) => setFormEsteira(e.target.value)}
                     required
-                    placeholder="Nome do esteira"
+                    placeholder="Selecione ou digite..."
                     className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                 </div>
               </div>
+
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -776,9 +818,10 @@ export default function SenhasPage() {
                   </label>
                   <input
                     type="text"
+                    list="lista-competidores-senhas"
                     value={novoPuxador}
                     onChange={(e) => setNovoPuxador(e.target.value)}
-                    placeholder="Nome do puxador"
+                    placeholder="Selecione ou digite..."
                     className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                 </div>
@@ -789,13 +832,15 @@ export default function SenhasPage() {
                   </label>
                   <input
                     type="text"
+                    list="lista-competidores-senhas"
                     value={novoEsteira}
                     onChange={(e) => setNovoEsteira(e.target.value)}
-                    placeholder="Nome do esteira"
+                    placeholder="Selecione ou digite..."
                     className="w-full px-3 py-2 border border-slate-300 rounded bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
                   />
                 </div>
               </div>
+
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

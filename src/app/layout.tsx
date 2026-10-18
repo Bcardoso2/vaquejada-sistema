@@ -27,11 +27,14 @@ const NAV_PRINCIPAL = [
 ];
 
 const NAV_CADASTROS = [
+  { href: '/competidores', rotulo: 'Competidores', descricao: 'Vaqueiros e esteireiros oficiais' },
+  { href: '/cavalos', rotulo: 'Cavalos', descricao: 'Animais de puxa e esteira' },
   { href: '/bois', rotulo: 'Boiada', descricao: 'Bois e registros' },
   { href: '/senhas', rotulo: 'Senhas', descricao: 'Estoque e inscrições' },
   { href: '/vaquejadas', rotulo: 'Eventos', descricao: 'Circuito e provas' },
   { href: '/usuarios', rotulo: 'Usuários & Perfis', descricao: 'Acesso e operadores (ADMIN)' },
 ];
+
 
 const linkDesktop =
   'px-3 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400';

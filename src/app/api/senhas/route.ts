@@ -24,13 +24,21 @@ export async function GET(request: NextRequest) {
         b1.nome as boi1_nome,
         b1.numero_registro as boi1_registro,
         b2.nome as boi2_nome,
-        b2.numero_registro as boi2_registro
+        b2.numero_registro as boi2_registro,
+        cp.apelido_pista as puxador_apelido,
+        ce.apelido_pista as esteira_apelido,
+        cav.nome as cavalo_oficial_nome,
+        cav.tipo as cavalo_tipo
       FROM senhas s 
       LEFT JOIN kits k ON s.kit_id = k.id
       LEFT JOIN bois b1 ON s.boi1_id = b1.id
       LEFT JOIN bois b2 ON s.boi2_id = b2.id
+      LEFT JOIN competidores cp ON s.puxador_id = cp.id
+      LEFT JOIN competidores ce ON s.esteira_id = ce.id
+      LEFT JOIN cavalos cav ON s.cavalo_puxa_id = cav.id
       WHERE 1=1
     `;
+
     const params: any[] = [];
 
     if (kitId) {

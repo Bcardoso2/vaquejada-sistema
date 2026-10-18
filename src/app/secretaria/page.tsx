@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+
 import { SenhaMap } from '@/components/SenhaMap';
+import { validarCpf } from '@/lib/cpf';
+
 
 /* ------------------------------------------------------------------ */
 /* Tipos                                                               */
@@ -125,17 +128,31 @@ export default function SecretariaPage() {
 
   const [boisOuro, setBoisOuro] = useState<BoiOuro[]>([]);
 
-  // Venda de senhas (agora trabalha com kits)
+  // Venda de senhas (agora trabalha com kits e cadastros oficiais)
   const [senhaCodigo, setSenhaCodigo] = useState(''); // Código da senha baixa do kit selecionado
   const [cavaloNome, setCavaloNome] = useState('');
+  const [cavaloId, setCavaloId] = useState<string | null>(null);
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('PIX');
   const [canalVenda, setCanalVenda] = useState<CanalVenda>('PRESENCIAL');
   const [puxadorNome, setPuxadorNome] = useState('');
+  const [puxadorId, setPuxadorId] = useState<string | null>(null);
   const [esteiraNome, setEsteiraNome] = useState('');
+  const [esteiraId, setEsteiraId] = useState<string | null>(null);
   const [categoria, setCategoria] = useState('PROFISSIONAL');
   const [valorVenda, setValorVenda] = useState('600');
   const [retornoVenda, setRetornoVenda] = useState<any>(null);
   const [mapaAberto, setMapaAberto] = useState(false);
+
+  // Cadastros oficiais carregados do banco
+  const [competidoresCadastrados, setCompetidoresCadastrados] = useState<{ id: string; nome: string; apelido_pista?: string }[]>([]);
+  const [cavalosCadastrados, setCavalosCadastrados] = useState<{ id: string; nome: string; tipo: string }[]>([]);
+
+  // Modais de Cadastro Rápido (sem sair da venda)
+  const [modalRapidoCompetidor, setModalRapidoCompetidor] = useState<'PUXADOR' | 'ESTEIRA' | null>(null);
+  const [formRapidoComp, setFormRapidoComp] = useState({ nome: '', apelido_pista: '', cpf: '', categoria: 'ABERTA' });
+  const [modalRapidoCavalo, setModalRapidoCavalo] = useState(false);
+  const [formRapidoCav, setFormRapidoCav] = useState({ nome: '', tipo: 'PUXA' });
+
 
   // Boi de Ouro
   const [senhaOrigemId, setSenhaOrigemId] = useState('');
@@ -208,6 +225,84 @@ export default function SecretariaPage() {
     }
   };
 
+  const carregarCadastros = useCallback(async () => {
+    try {
+      const [resComp, resCav] = await Promise.all([
+        fetch('/api/competidores?ativo=true'),
+        fetch('/api/cavalos?ativo=true'),
+      ]);
+      if (resComp.ok) {
+        const d = await resComp.json();
+        if (Array.isArray(d)) setCompetidoresCadastrados(d);
+      }
+      if (resCav.ok) {
+        const d = await resCav.json();
+        if (Array.isArray(d)) setCavalosCadastrados(d);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    carregarCadastros();
+  }, [carregarCadastros]);
+
+  const handleSalvarRapidoCompetidor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validarCpf(formRapidoComp.cpf)) {
+      mostrarToast('erro', 'CPF inválido! Preencha um CPF válido com 11 dígitos.');
+      return;
+    }
+    try {
+      const res = await fetch('/api/competidores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formRapidoComp),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        mostrarToast('sucesso', `Competidor "${data.competidor.nome}" cadastrado com sucesso.`);
+        if (modalRapidoCompetidor === 'PUXADOR') {
+          setPuxadorNome(data.competidor.nome);
+          setPuxadorId(data.competidor.id);
+        } else if (modalRapidoCompetidor === 'ESTEIRA') {
+          setEsteiraNome(data.competidor.nome);
+          setEsteiraId(data.competidor.id);
+        }
+        setModalRapidoCompetidor(null);
+        setFormRapidoComp({ nome: '', apelido_pista: '', cpf: '', categoria: 'ABERTA' });
+        await carregarCadastros();
+      } else {
+        mostrarToast('erro', data.error || 'Erro ao cadastrar competidor.');
+      }
+    } catch {
+      mostrarToast('erro', 'Erro de conexão ao cadastrar competidor.');
+    }
+  };
+
+  const handleSalvarRapidoCavalo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/cavalos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formRapidoCav),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        mostrarToast('sucesso', `Animal "${data.cavalo.nome}" cadastrado com sucesso.`);
+        setCavaloNome(data.cavalo.nome);
+        setCavaloId(data.cavalo.id);
+        setModalRapidoCavalo(false);
+        setFormRapidoCav({ nome: '', tipo: 'PUXA' });
+        await carregarCadastros();
+      } else {
+        mostrarToast('erro', data.error || 'Erro ao cadastrar cavalo.');
+      }
+    } catch {
+      mostrarToast('erro', 'Erro de conexão ao cadastrar cavalo.');
+    }
+  };
+
   /* ------------------------------ vendas ------------------------------ */
 
   const valorVendaNumero = Number(valorVenda.replace(',', '.'));
@@ -221,8 +316,11 @@ export default function SecretariaPage() {
   const limparFormularioVenda = () => {
     setSenhaCodigo('');
     setPuxadorNome('');
+    setPuxadorId(null);
     setEsteiraNome('');
+    setEsteiraId(null);
     setCavaloNome('');
+    setCavaloId(null);
   };
 
   const handleEmitirVenda = async (e: React.FormEvent) => {
@@ -247,12 +345,15 @@ export default function SecretariaPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          senhaCodigo, // Isso agora representa o código da senha baixa do kit
+          senhaCodigo,
           cavaloNome: cavaloNome.trim(),
+          cavaloPuxaId: cavaloId,
           formaPagamento,
           canalVenda,
           puxadorNome: puxadorNome.trim(),
+          puxadorId,
           esteiraNome: esteiraNome.trim(),
+          esteiraId,
           categoria,
           valorCentavos: Math.round(valorVendaNumero * 100),
         }),
@@ -260,7 +361,7 @@ export default function SecretariaPage() {
       const data = await res.json();
       if (res.ok) {
         setRetornoVenda(data);
-        limparFormularioVenda(); // agora também limpa a senha selecionada
+        limparFormularioVenda();
         mostrarToast('sucesso', 'Venda emitida com sucesso.');
       } else {
         mostrarToast('erro', data.error || 'Erro ao realizar venda');
@@ -268,6 +369,7 @@ export default function SecretariaPage() {
     } catch {
       mostrarToast('erro', 'Erro de conexão ao realizar venda');
     } finally {
+
       setEnviandoVenda(false);
     }
   };
@@ -476,46 +578,114 @@ export default function SecretariaPage() {
                 </div>
               </div>
 
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider -mb-2 pt-2 border-t border-slate-100">
-                2. Dupla e cavalo
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider -mb-2 pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span>2. Dupla e cavalo</span>
+                <span className="text-[11px] text-slate-400 font-normal">Selecione dos cadastros ou digite para autocompletar</span>
               </h3>
+
+              <datalist id="lista-competidores">
+                {competidoresCadastrados.map((c) => (
+                  <option key={c.id} value={c.nome}>
+                    {c.apelido_pista ? `"${c.apelido_pista}"` : ''}
+                  </option>
+                ))}
+              </datalist>
+
+              <datalist id="lista-cavalos">
+                {cavalosCadastrados.map((cav) => (
+                  <option key={cav.id} value={cav.nome}>
+                    {cav.tipo === 'PUXA' ? '(Puxa)' : cav.tipo === 'ESTEIRA' ? '(Esteira)' : '(Ambos)'}
+                  </option>
+                ))}
+              </datalist>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Campo id="puxador" label="Nome do Puxador" obrigatorio>
-                  <input
-                    id="puxador"
-                    type="text"
-                    required
-                    placeholder="Ex: Celso Vitório"
-                    value={puxadorNome}
-                    onChange={(e) => setPuxadorNome(e.target.value)}
-                    className={inputBase}
-                  />
+                <Campo id="puxador" label="Puxador Oficial" obrigatorio>
+                  <div className="flex gap-1.5">
+                    <input
+                      id="puxador"
+                      type="text"
+                      list="lista-competidores"
+                      required
+                      placeholder="Busque ou digite o nome..."
+                      value={puxadorNome}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPuxadorNome(val);
+                        const match = competidoresCadastrados.find(c => c.nome.toLowerCase() === val.toLowerCase());
+                        setPuxadorId(match ? match.id : null);
+                      }}
+                      className={inputBase}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalRapidoCompetidor('PUXADOR')}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border border-slate-300 shrink-0 cursor-pointer"
+                      title="Cadastrar novo puxador rapidamente"
+                    >
+                      + Novo
+                    </button>
+                  </div>
                 </Campo>
-                <Campo id="esteira" label="Nome do Esteira" obrigatorio>
-                  <input
-                    id="esteira"
-                    type="text"
-                    required
-                    placeholder="Ex: Juninho Vaqueiro"
-                    value={esteiraNome}
-                    onChange={(e) => setEsteiraNome(e.target.value)}
-                    className={inputBase}
-                  />
+
+                <Campo id="esteira" label="Esteireiro Oficial" obrigatorio>
+                  <div className="flex gap-1.5">
+                    <input
+                      id="esteira"
+                      type="text"
+                      list="lista-competidores"
+                      required
+                      placeholder="Busque ou digite o nome..."
+                      value={esteiraNome}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEsteiraNome(val);
+                        const match = competidoresCadastrados.find(c => c.nome.toLowerCase() === val.toLowerCase());
+                        setEsteiraId(match ? match.id : null);
+                      }}
+                      className={inputBase}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalRapidoCompetidor('ESTEIRA')}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border border-slate-300 shrink-0 cursor-pointer"
+                      title="Cadastrar novo esteireiro rapidamente"
+                    >
+                      + Novo
+                    </button>
+                  </div>
                 </Campo>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Campo id="cavalo" label="Nome do Cavalo" obrigatorio>
-                  <input
-                    id="cavalo"
-                    type="text"
-                    required
-                    placeholder="Nome do cavalo"
-                    value={cavaloNome}
-                    onChange={(e) => setCavaloNome(e.target.value)}
-                    className={inputBase}
-                  />
+                <Campo id="cavalo" label="Cavalo de Puxa" obrigatorio>
+                  <div className="flex gap-1.5">
+                    <input
+                      id="cavalo"
+                      type="text"
+                      list="lista-cavalos"
+                      required
+                      placeholder="Busque ou digite o nome do animal..."
+                      value={cavaloNome}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCavaloNome(val);
+                        const match = cavalosCadastrados.find(cav => cav.nome.toLowerCase() === val.toLowerCase());
+                        setCavaloId(match ? match.id : null);
+                      }}
+                      className={inputBase}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalRapidoCavalo(true)}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border border-slate-300 shrink-0 cursor-pointer"
+                      title="Cadastrar novo cavalo rapidamente"
+                    >
+                      + Novo
+                    </button>
+                  </div>
                 </Campo>
+
                 <Campo id="categoria" label="Categoria da Prova">
                   <select
                     id="categoria"
@@ -831,6 +1001,126 @@ export default function SecretariaPage() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal Cadastro Rápido de Competidor */}
+
+      {modalRapidoCompetidor && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleSalvarRapidoCompetidor} className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-3.5">
+            <h3 className="text-base font-bold text-slate-900">
+              Cadastro Rápido de {modalRapidoCompetidor === 'PUXADOR' ? 'Puxador' : 'Esteireiro'}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Cadastre o vaqueiro agora para selecioná-lo imediatamente nesta venda.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nome Completo *</label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Celso Vitório"
+                value={formRapidoComp.nome}
+                onChange={(e) => setFormRapidoComp({ ...formRapidoComp, nome: e.target.value })}
+                className="w-full text-xs border border-slate-300 rounded-lg p-2"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Apelido</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Celsinho"
+                  value={formRapidoComp.apelido_pista}
+                  onChange={(e) => setFormRapidoComp({ ...formRapidoComp, apelido_pista: e.target.value })}
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">CPF (11 dígitos) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="000.000.000-00"
+                  value={formRapidoComp.cpf}
+                  onChange={(e) => setFormRapidoComp({ ...formRapidoComp, cpf: e.target.value })}
+                  className="w-full text-xs border border-slate-300 rounded-lg p-2 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setModalRapidoCompetidor(null)}
+                className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Salvar e Selecionar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Cadastro Rápido de Cavalo */}
+      {modalRapidoCavalo && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <form onSubmit={handleSalvarRapidoCavalo} className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-3.5">
+            <h3 className="text-base font-bold text-slate-900">Cadastro Rápido de Cavalo</h3>
+            <p className="text-xs text-slate-500">
+              Cadastre o animal de puxa agora para selecioná-lo imediatamente nesta venda.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Nome do Cavalo *</label>
+              <input
+                type="text"
+                required
+                placeholder="Ex: Holland Ease"
+                value={formRapidoCav.nome}
+                onChange={(e) => setFormRapidoCav({ ...formRapidoCav, nome: e.target.value })}
+                className="w-full text-xs border border-slate-300 rounded-lg p-2"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Aptidão *</label>
+              <select
+                value={formRapidoCav.tipo}
+                onChange={(e) => setFormRapidoCav({ ...formRapidoCav, tipo: e.target.value })}
+                className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white"
+              >
+                <option value="PUXA">Cavalo de Puxa</option>
+                <option value="ESTEIRA">Cavalo de Esteira</option>
+                <option value="AMBOS">Ambos</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setModalRapidoCavalo(false)}
+                className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Salvar e Selecionar
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
