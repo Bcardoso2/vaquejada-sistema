@@ -38,9 +38,9 @@ const NAV_CADASTROS = [
 
 
 const linkDesktop =
-  'px-3 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400';
+  'px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500';
 const linkMobile =
-  'block px-3 py-3 rounded-lg text-sm font-medium text-slate-200 hover:bg-white/10 transition';
+  'block px-3 py-3 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Pular para o conteúdo
         </a>
 
-        <header className="bg-slate-950 text-white border-b border-white/10 sticky top-0 z-50 shadow-lg shadow-slate-950/10">
+        <header className="bg-white text-slate-800 border-b border-slate-200 sticky top-0 z-50 shadow-xs">
           {/* Filete de destaque */}
           <div className="h-0.5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-600" />
 
@@ -61,10 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="flex items-center justify-between h-16 gap-4">
               {/* Marca */}
               <Link href="/" className="flex items-center gap-3 shrink-0 group">
-                <img src="/simbolo-fundo-escuro.svg" alt="Vaquejada Pro logo" className="w-9 h-9 rounded-lg shadow-sm group-hover:bg-amber-300 transition" />
+                <img src="/simbolo-fundo-claro.svg" alt="Vaquejada Pro logo" className="w-9 h-9 rounded-lg shadow-xs group-hover:scale-105 transition" />
                 <div className="hidden sm:block">
-                  <div className="font-bold text-white text-base leading-tight tracking-tight">Vaquejada Pro</div>
-                  <div className="text-[11px] text-slate-400 font-medium tracking-wide">Gestão de Provas & Parque</div>
+                  <div className="font-bold text-slate-900 text-base leading-tight tracking-tight">Vaquejada Pro</div>
+                  <div className="text-[11px] text-slate-500 font-medium tracking-wide">Gestão de Provas & Parque</div>
                 </div>
               </Link>
 
@@ -81,16 +81,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <div className="flex items-center gap-3">
                 <UserNav />
 
-                {/* Menu suspenso de cadastros (só CSS: abre com mouse ou foco do teclado) */}
+                {/* Menu suspenso de cadastros */}
                 <div className="hidden lg:block relative group">
                   <button
                     type="button"
                     aria-haspopup="true"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 hover:text-slate-900 border border-slate-200 shadow-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 cursor-pointer"
                   >
                     Cadastros
                     <svg
-                      className="h-4 w-4 transition group-hover:rotate-180 group-focus-within:rotate-180"
+                      className="h-4 w-4 text-slate-500 transition group-hover:rotate-180 group-focus-within:rotate-180"
                       fill="none"
                       stroke="currentColor"
                       strokeWidth={2}
@@ -116,11 +116,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </div>
                 </div>
 
-                {/* Menu mobile/tablet: <details> do HTML, funciona sem JavaScript */}
+                {/* Menu mobile/tablet */}
                 <details className="lg:hidden group">
                   <summary
                     aria-label="Abrir ou fechar menu"
-                    className="list-none [&::-webkit-details-marker]:hidden p-2 -mr-2 rounded-lg text-slate-200 hover:bg-white/10 cursor-pointer"
+                    className="list-none [&::-webkit-details-marker]:hidden p-2 -mr-2 rounded-lg text-slate-700 hover:bg-slate-100 cursor-pointer"
                   >
                     <svg
                       className="h-6 w-6 group-open:hidden"
@@ -144,7 +144,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </svg>
                   </summary>
 
-                  <div className="absolute inset-x-0 top-full bg-slate-950 border-b border-white/10 shadow-2xl max-h-[calc(100vh-4.5rem)] overflow-y-auto">
+                  <div className="absolute inset-x-0 top-full bg-white border-b border-slate-200 shadow-2xl max-h-[calc(100vh-4.5rem)] overflow-y-auto">
                     <nav aria-label="Principal (mobile)" className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-1">
                       {NAV_PRINCIPAL.map((l) => (
                         <Link key={l.href} href={l.href} className={linkMobile}>
@@ -152,8 +152,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         </Link>
                       ))}
                     </nav>
-                    <div className="px-4 pb-4 pt-3 border-t border-white/10">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-2">
+                    <div className="px-4 pb-4 pt-3 border-t border-slate-100">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                         Cadastros
                       </div>
                       <div className="flex flex-wrap gap-1.5">
@@ -161,14 +161,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                           <Link
                             key={l.href}
                             href={l.href}
-                            className="px-3 py-2 rounded-lg border border-white/15 text-sm font-medium text-slate-200 hover:bg-white/10 transition"
+                            className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-100 transition"
                           >
                             {l.rotulo}
                           </Link>
                         ))}
                       </div>
-                      <div className="md:hidden mt-4 inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-400/30 rounded-full text-xs font-semibold text-emerald-300">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <div className="md:hidden mt-4 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-semibold text-emerald-800">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
                         Circuito 2026 ativo
                       </div>
                     </div>
@@ -183,26 +183,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </main>
 
-        <footer className="bg-slate-950 text-slate-400 mt-auto">
-          <div className="h-px bg-gradient-to-r from-transparent via-amber-500/50 to-transparent" />
+        <footer className="bg-white text-slate-600 border-t border-slate-200 mt-auto">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
               <div className="md:col-span-5">
                 <div className="flex items-center gap-2.5">
-                  <img src="/simbolo-fundo-escuro.svg" alt="Vaquejada Pro logo" className="w-7 h-7 rounded-md shadow-sm group-hover:bg-amber-300 transition" />
-                  <span className="font-bold text-white tracking-tight">Vaquejada Pro</span>
+                  <img src="/simbolo-fundo-claro.svg" alt="Vaquejada Pro logo" className="w-7 h-7 rounded-md shadow-xs" />
+                  <span className="font-bold text-slate-900 tracking-tight">Vaquejada Pro</span>
                 </div>
-                <p className="text-xs leading-relaxed mt-3 max-w-sm">
+                <p className="text-xs leading-relaxed mt-3 max-w-sm text-slate-500">
                   Operação em tempo real com auditoria e controle de pista, secretaria, julgamento e financeiro.
                 </p>
               </div>
 
               <div className="md:col-span-4">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Módulos</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Módulos</div>
                 <ul className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                   {NAV_PRINCIPAL.map((l) => (
                     <li key={l.href}>
-                      <Link href={l.href} className="hover:text-white transition">
+                      <Link href={l.href} className="text-slate-600 hover:text-slate-900 transition">
                         {l.rotulo}
                       </Link>
                     </li>
@@ -211,11 +210,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
 
               <div className="md:col-span-3">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Cadastros</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Cadastros</div>
                 <ul className="space-y-2 text-xs">
                   {NAV_CADASTROS.map((l) => (
                     <li key={l.href}>
-                      <Link href={l.href} className="hover:text-white transition">
+                      <Link href={l.href} className="text-slate-600 hover:text-slate-900 transition">
                         {l.rotulo}
                       </Link>
                     </li>
@@ -224,7 +223,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
 
-            <div className="mt-8 pt-5 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-500">
+            <div className="mt-8 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-400">
               <div>Vaquejada Pro · Versão 1.0</div>
               <div>Todas as ações da pista e da secretaria ficam registradas em auditoria.</div>
             </div>
