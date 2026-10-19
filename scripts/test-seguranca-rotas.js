@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const BASE_URL_IP = 'http://127.0.0.1:3099';
+const BASE_URL_IP = process.env.TEST_BASE_URL || 'http://127.0.0.1:3099';
 const PG_URL = process.env.DATABASE_URL || 'postgresql://briciocardoso@localhost:5432/vaquejada_db';
 
 const MATRIZ_ROTAS = {
