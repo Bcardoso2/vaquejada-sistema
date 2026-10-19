@@ -364,8 +364,8 @@ export async function GET(request: NextRequest) {
 </head>
 <body>
   <div class="no-print">
-    <span>💰 <strong>Fechamento Contábil de Caixa (Pronto para PDF / Impressão A4)</strong></span>
-    <button class="btn-action" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+    <span><strong>Fechamento Contábil de Caixa (Pronto para PDF / Impressão A4)</strong></span>
+    <button class="btn-action" onclick="window.print()">Salvar como PDF / Imprimir</button>
   </div>
 
   <div class="header">

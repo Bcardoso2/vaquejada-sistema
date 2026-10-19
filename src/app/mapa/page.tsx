@@ -114,7 +114,7 @@ export default function MapaPistaPage() {
       setAudioHabilitado(true);
       // Bip de confirmação
       tocarSomCancela(880, 150);
-      exibirToast('🔊 Áudio ativado com sucesso para avisos de cancela!');
+      exibirToast('Áudio ativado com sucesso para avisos de cancela!');
     } catch (e) {
       console.error('Falha ao inicializar AudioContext:', e);
       exibirToast('Não foi possível ativar o áudio neste navegador', 'aviso');
@@ -123,7 +123,7 @@ export default function MapaPistaPage() {
 
   const desativarAudio = () => {
     setAudioHabilitado(false);
-    exibirToast('🔇 Áudio desativado.');
+    exibirToast('Áudio desativado.');
   };
 
   // Áudio sintetizado via Web Audio API para avisos de cancela
@@ -316,7 +316,7 @@ export default function MapaPistaPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        exibirToast('↩️ Resultado desfeito com sucesso! Corrida retornou à pista.', 'sucesso');
+        exibirToast('Resultado desfeito com sucesso! Corrida retornou à pista.', 'sucesso');
         setUltimoResultado(null);
         await carregarDados();
       } else {
@@ -348,7 +348,7 @@ export default function MapaPistaPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        exibirToast('✅ Resultado corrigido e auditado pelo administrador!', 'sucesso');
+        exibirToast('Resultado corrigido e auditado pelo administrador!', 'sucesso');
         setModalCorrecaoAdmin({ aberto: false, corrida: null, novoResultado: 'VALEU', motivo: '' });
         await carregarDados();
       } else {
@@ -437,8 +437,11 @@ export default function MapaPistaPage() {
       {/* BARRA SUPERIOR: CONTROLES DO MODO PISTA & BATERIAS */}
       <div className={`${modoPista ? 'bg-slate-900 border-2 border-amber-500' : 'bg-white border border-slate-200'} rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden`}>
         <div className="flex items-center gap-4">
-          <div className="p-3 bg-amber-500 text-black font-black text-2xl rounded-xl shadow">
-            🤠 MODO PISTA
+          <div className="p-3 bg-amber-500 text-black font-black text-sm rounded-xl shadow flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <span>MODO PISTA</span>
           </div>
           <div>
             <h1 className={`text-2xl font-black uppercase tracking-tight ${modoPista ? 'text-amber-400' : 'text-slate-900'}`}>
@@ -460,10 +463,10 @@ export default function MapaPistaPage() {
               modoPista ? 'bg-slate-800 text-amber-300 border-amber-500' : 'bg-slate-50 text-slate-800 border-slate-300'
             }`}
           >
-            <option value="TODAS">⚡ Todas as Baterias</option>
+            <option value="TODAS">Todas as Baterias</option>
             {baterias.map((b) => (
               <option key={b.id} value={b.id}>
-                Bateria {b.numero} ({b.status === 'EM_ANDAMENTO' ? '🔥 ATIVA' : b.status}) • {b.total_corridas} duplas
+                Bateria {b.numero} ({b.status === 'EM_ANDAMENTO' ? 'ATIVA' : b.status}) • {b.total_corridas} duplas
               </option>
             ))}
           </select>
@@ -473,7 +476,11 @@ export default function MapaPistaPage() {
             onClick={() => setModalGerarBaterias({ aberto: true, tamanho: 15 })}
             className="min-h-[48px] px-4 bg-amber-500 hover:bg-amber-600 text-black font-black text-sm rounded-xl transition shadow flex items-center gap-2"
           >
-            ⚙️ Gerar Baterias
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span>Gerar Baterias</span>
           </button>
 
           {/* Botão Súmula Oficial em PDF */}
@@ -485,7 +492,10 @@ export default function MapaPistaPage() {
               className="min-h-[48px] px-4 bg-purple-700 hover:bg-purple-800 text-white font-bold text-sm rounded-xl transition shadow flex items-center gap-2"
               title="Abrir súmula oficial da bateria em PDF para impressão"
             >
-              📄 Súmula PDF
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Súmula PDF</span>
             </a>
           )}
 
@@ -494,17 +504,23 @@ export default function MapaPistaPage() {
             onClick={imprimirOrdemLargada}
             className="min-h-[48px] px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition shadow flex items-center gap-2"
           >
-            🖨️ Imprimir Largada
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            <span>Imprimir Largada</span>
           </button>
 
           {/* Toggle Alto Contraste / Modo Pista */}
           <button
             onClick={() => setModoPista(!modoPista)}
-            className={`min-h-[48px] px-4 font-bold text-sm rounded-xl border-2 transition ${
+            className={`min-h-[48px] px-4 font-bold text-sm rounded-xl border-2 transition flex items-center gap-2 ${
               modoPista ? 'bg-black text-amber-400 border-amber-400' : 'bg-slate-100 text-slate-700 border-slate-300'
             }`}
           >
-            {modoPista ? '☀️ Alto Contraste (ON)' : 'Visual Padrão'}
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <span>{modoPista ? 'Alto Contraste (ON)' : 'Visual Padrão'}</span>
           </button>
         </div>
       </div>
@@ -513,10 +529,12 @@ export default function MapaPistaPage() {
       {ultimoResultado && (
         <div className="bg-amber-500 text-black p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border-4 border-black animate-pulse print:hidden">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">⚠️</span>
+            <svg className="w-8 h-8 text-black flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
             <div>
               <p className="font-black text-lg uppercase tracking-wide">
-                Resultado Lançado: Senha #{ultimoResultado.senhaCodigo} ➔ {ultimoResultado.resultado}
+                Resultado Lançado: Senha #{ultimoResultado.senhaCodigo} → {ultimoResultado.resultado}
               </p>
               <p className="text-xs font-bold text-black/80">
                 Toque acidental? Você tem <span className="underline font-black text-sm">{ultimoResultado.tempoRestante}s</span> para desfazer e retornar a corrida para a pista.
@@ -527,7 +545,10 @@ export default function MapaPistaPage() {
             onClick={handleDesfazerResultado}
             className="min-h-[56px] px-6 bg-black hover:bg-slate-900 text-amber-400 font-black text-base rounded-xl shadow-lg transition transform active:scale-95 flex items-center gap-2 border-2 border-amber-400"
           >
-            ↩️ DESFAZER AGORA ({ultimoResultado.tempoRestante}s)
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            <span>DESFAZER AGORA ({ultimoResultado.tempoRestante}s)</span>
           </button>
         </div>
       )}
@@ -571,16 +592,22 @@ export default function MapaPistaPage() {
               {cancelaAtiva ? (
                 <button
                   onClick={pararCancelaServidor}
-                  className="min-h-[44px] px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl"
+                  className="min-h-[44px] px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5"
                 >
-                  ⏹ Parar
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                  <span>Parar</span>
                 </button>
               ) : (
                 <button
                   onClick={() => dispararCancelaServidor(tempoCancelaPadrao)}
-                  className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
+                  className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5"
                 >
-                  ▶ Disparar
+                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  <span>Disparar</span>
                 </button>
               )}
 
@@ -610,7 +637,9 @@ export default function MapaPistaPage() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950 border border-emerald-500 text-emerald-300 text-xs font-black shadow"
                     title="Toque para mutar áudio da cancela"
                   >
-                    <span>🔊</span>
+                    <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
                     <span>ÁUDIO ATIVO</span>
                   </button>
                 ) : (
@@ -619,7 +648,10 @@ export default function MapaPistaPage() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black shadow animate-bounce"
                     title="Navegadores exigem toque para tocar som"
                   >
-                    <span>🔇</span>
+                    <svg className="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
                     <span>ATIVAR SOM (TOQUE)</span>
                   </button>
                 )}
@@ -669,7 +701,11 @@ export default function MapaPistaPage() {
                   onClick={() => executarAcao('INICIAR', corridaAtiva.id)}
                   className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-3 uppercase tracking-wider"
                 >
-                  🚪 ABRIR PORTEIRA (INICIAR CORRIDA)
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>ABRIR PORTEIRA (INICIAR CORRIDA)</span>
                 </button>
               )}
 
@@ -678,31 +714,45 @@ export default function MapaPistaPage() {
                   {/* VALEU BOI */}
                   <button
                     onClick={() => executarAcao('REGISTRAR_RESULTADO', corridaAtiva.id, 'VALEU')}
-                    className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider"
+                    className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider"
                   >
-                    🟢 VALEU BOI
+                    <span className="w-3.5 h-3.5 rounded-full bg-black/40 border border-black/20"></span>
+                    <span>VALEU BOI</span>
                   </button>
 
                   {/* ZERO (CONFIRMAÇÃO EM DOIS TOQUES) */}
                   <button
                     onClick={() => dispararConfirmacaoZero(corridaAtiva.id)}
-                    className={`min-h-[64px] font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider ${
+                    className={`min-h-[64px] font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider ${
                       confirmacaoZero && confirmacaoZero.id === corridaAtiva.id
                         ? 'bg-amber-400 text-black border-4 border-white animate-bounce'
                         : 'bg-rose-600 hover:bg-rose-700 text-white'
                     }`}
                   >
-                    {confirmacaoZero && confirmacaoZero.id === corridaAtiva.id
-                      ? '⚠️ TOQUE PARA CONFIRMAR ZERO!'
-                      : '🔴 ZERO'}
+                    {confirmacaoZero && confirmacaoZero.id === corridaAtiva.id ? (
+                      <>
+                        <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span>CONFIRMAR ZERO!</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-3.5 h-3.5 rounded-full bg-white/40 border border-white/20"></span>
+                        <span>ZERO</span>
+                      </>
+                    )}
                   </button>
 
                   {/* RETORNO */}
                   <button
                     onClick={() => executarAcao('REGISTRAR_RESULTADO', corridaAtiva.id, 'RETORNO')}
-                    className="min-h-[64px] bg-amber-500 hover:bg-amber-600 text-black font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider"
+                    className="min-h-[64px] bg-amber-500 hover:bg-amber-600 text-black font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wider"
                   >
-                    🔄 RETORNO
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span>RETORNO</span>
                   </button>
                 </div>
               )}
@@ -716,7 +766,7 @@ export default function MapaPistaPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-700 mb-6 gap-3">
           <div>
             <h2 className="text-xl md:text-2xl font-black text-amber-400 uppercase">
-              📋 ORDEM DE LARGADA DA BATERIA
+              ORDEM DE LARGADA DA BATERIA
             </h2>
             <p className="text-sm text-gray-400">
               Total listado: {corridasFiltradas.length} duplas na sequência de pista
@@ -729,7 +779,10 @@ export default function MapaPistaPage() {
               onClick={() => handleFecharBateria(bateriaSelecionada)}
               className="min-h-[48px] px-5 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-xl shadow print:hidden flex items-center gap-2"
             >
-              🏁 Fechar Bateria e Avançar
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>Fechar Bateria e Avançar</span>
             </button>
           )}
         </div>
@@ -819,9 +872,12 @@ export default function MapaPistaPage() {
                               executarAcao('CHAMAR', c.id);
                               dispararCancelaServidor();
                             }}
-                            className="min-h-[56px] px-5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow transition"
+                            className="min-h-[56px] px-5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow transition flex items-center gap-2"
                           >
-                            📢 CHAMAR PISTA
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                            </svg>
+                            <span>CHAMAR PISTA</span>
                           </button>
                         )}
 
@@ -838,7 +894,9 @@ export default function MapaPistaPage() {
                             className="min-h-[44px] px-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5"
                             title="Correção administrativa após 10s (exige ADMIN e justificativa auditada)"
                           >
-                            <span>✏️</span>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
                             <span>Corrigir (Admin)</span>
                           </button>
                         )}
@@ -856,7 +914,12 @@ export default function MapaPistaPage() {
       {modalCorrecaoAdmin.aberto && modalCorrecaoAdmin.corrida && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl text-white">
-            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase">✏️ Correção Administrativa</h3>
+            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              <span>Correção Administrativa</span>
+            </h3>
             <p className="text-xs text-gray-400 mb-4">
               Esta ação é restrita a administradores e será registrada integralmente no log de auditoria com data, operador e motivo.
             </p>
@@ -879,9 +942,9 @@ export default function MapaPistaPage() {
               onChange={(e) => setModalCorrecaoAdmin({ ...modalCorrecaoAdmin, novoResultado: e.target.value })}
               className="w-full min-h-[50px] px-3 bg-black border-2 border-slate-700 rounded-xl font-bold text-white mb-4"
             >
-              <option value="VALEU">🟢 VALEU BOI</option>
-              <option value="ZERO">🔴 ZERO</option>
-              <option value="RETORNO">🔄 BOI DE RETORNO</option>
+              <option value="VALEU">VALEU BOI</option>
+              <option value="ZERO">ZERO</option>
+              <option value="RETORNO">BOI DE RETORNO</option>
             </select>
 
             <label className="text-xs font-bold text-gray-300 uppercase block mb-1">
@@ -917,7 +980,13 @@ export default function MapaPistaPage() {
       {modalGerarBaterias.aberto && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl text-white">
-            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase">⚙️ Gerar Baterias de Corrida</h3>
+            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase flex items-center gap-2">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Gerar Baterias de Corrida</span>
+            </h3>
             <p className="text-sm text-gray-400 mb-6">
               Agrupe automaticamente as duplas da vaquejada em baterias sequenciais.
             </p>
@@ -964,7 +1033,19 @@ export default function MapaPistaPage() {
                 : 'bg-amber-950 text-amber-200 border-amber-500'
             }`}
           >
-            <span>{toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : '⚠️'}</span>
+            {toast.tipo === 'sucesso' ? (
+              <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : toast.tipo === 'erro' ? (
+              <svg className="w-5 h-5 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )}
             <span>{toast.mensagem}</span>
           </div>
         </div>

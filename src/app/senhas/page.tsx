@@ -308,7 +308,11 @@ export default function SenhasPage() {
         {mensagemSucesso && (
           <div className="p-4 bg-emerald-50 border-l-4 border-emerald-600 rounded text-emerald-800 text-xs font-medium flex items-center justify-between">
             <span>{mensagemSucesso}</span>
-            <button onClick={() => setMensagemSucesso(null)} className="text-emerald-700 hover:text-emerald-950 font-bold">✕</button>
+            <button onClick={() => setMensagemSucesso(null)} className="text-emerald-700 hover:text-emerald-950 p-1" aria-label="Fechar">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -505,9 +509,8 @@ export default function SenhasPage() {
                             )}
                           </div>
                           {((s as any).cavalo_oficial_nome || (s as any).cavalo_nome) && (
-                            <div className="text-slate-500 text-[11px] mt-0.5 flex items-center gap-1">
-                              <span>🐎</span>
-                              <span>{(s as any).cavalo_oficial_nome || (s as any).cavalo_nome}</span>
+                            <div className="text-slate-500 text-[11px] mt-0.5">
+                              Cavalo: {(s as any).cavalo_oficial_nome || (s as any).cavalo_nome}
                             </div>
                           )}
                         </td>
@@ -607,9 +610,12 @@ export default function SenhasPage() {
               </div>
               <button
                 onClick={() => setSenhaEditando(null)}
-                className="text-slate-400 hover:text-slate-700 font-bold"
+                className="text-slate-400 hover:text-slate-700 p-1"
+                aria-label="Fechar"
               >
-                ✕
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 
@@ -775,9 +781,12 @@ export default function SenhasPage() {
               </div>
               <button
                 onClick={() => setModalNovoAberto(false)}
-                className="text-slate-400 hover:text-slate-700 font-bold"
+                className="text-slate-400 hover:text-slate-700 p-1"
+                aria-label="Fechar"
               >
-                ✕
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
 

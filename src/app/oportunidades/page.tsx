@@ -193,7 +193,15 @@ export default function OportunidadesPage() {
               : 'bg-rose-950 border-rose-700 text-rose-200'
           }`}
         >
-          <span>{toast.tipo === 'sucesso' ? '✅' : '❌'}</span>
+          {toast.tipo === 'sucesso' ? (
+            <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          )}
           <span>{toast.mensagem}</span>
         </div>
       )}
@@ -280,7 +288,6 @@ export default function OportunidadesPage() {
           <div className="p-12 text-center text-slate-500 font-mono text-sm">Carregando oportunidades...</div>
         ) : oportunidadesFiltradas.length === 0 ? (
           <div className="p-12 text-center">
-            <span className="text-3xl block mb-2">🔄</span>
             <p className="text-slate-600 font-medium">Nenhuma oportunidade localizada.</p>
             <p className="text-slate-400 text-xs mt-1">Gere novas oportunidades a partir de corridas da pista.</p>
           </div>
@@ -452,8 +459,10 @@ export default function OportunidadesPage() {
       {modalExcluir && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl mb-3">
-              ⚠️
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mb-3">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
             </div>
             <h3 className="text-lg font-bold text-slate-900">Confirmar exclusão de oportunidade?</h3>
             <p className="text-sm text-slate-500 mt-1 mb-5">

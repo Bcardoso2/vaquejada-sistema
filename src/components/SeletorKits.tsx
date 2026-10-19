@@ -128,7 +128,11 @@ export function SeletorKits({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>🗂️</span> Cards Pareados
+                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M7 8h10M7 12h10M7 16h6" />
+                </svg>
+                <span>Cards Pareados</span>
               </button>
               <button
                 type="button"
@@ -139,7 +143,13 @@ export function SeletorKits({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span>▦</span> Grade Dupla Lado a Lado
+                <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                </svg>
+                <span>Grade Dupla</span>
               </button>
             </div>
 
@@ -176,9 +186,12 @@ export function SeletorKits({
               <button
                 type="button"
                 onClick={() => setBusca('')}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-slate-400 hover:text-slate-700 font-bold"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-700"
+                aria-label="Limpar busca"
               >
-                ✕
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             )}
           </div>
@@ -302,7 +315,7 @@ export function SeletorKits({
                             : 'bg-amber-100 text-amber-800 border border-amber-200'
                         }`}
                       >
-                        {kit.status === 'DISPONIVEL' ? '✓ Disponível' : kit.status === 'VENDIDO' ? 'Vendido' : 'Parcial'}
+                        {kit.status === 'DISPONIVEL' ? 'Disponível' : kit.status === 'VENDIDO' ? 'Vendido' : 'Parcial'}
                       </span>
                     </div>
 
@@ -367,7 +380,7 @@ export function SeletorKits({
                             : 'bg-slate-900 hover:bg-emerald-600 text-white'
                         }`}
                       >
-                        {selecionado ? '✓ Kit Selecionado' : 'Selecionar Este Kit'}
+                        {selecionado ? 'Kit Selecionado' : 'Selecionar Este Kit'}
                       </button>
                     )}
                   </div>
@@ -378,8 +391,12 @@ export function SeletorKits({
             /* MODO 2: GRADE DUPLA SINCRONIZADA LADO A LADO (LIGHT) */
             <div className="space-y-4">
               <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center justify-between shadow-xs">
-                <span>
-                  💡 <strong>Dica:</strong> As senhas baixas e altas estão posicionadas lado a lado. Ao passar o mouse sobre qualquer senha, o par correspondente ilumina automaticamente!
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-4m0-4h.01" />
+                  </svg>
+                  <span><strong>Dica:</strong> As senhas baixas e altas estão posicionadas lado a lado. Ao passar o mouse sobre qualquer senha, o par correspondente ilumina automaticamente!</span>
                 </span>
                 <span className="font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
                   {gradeBaixas.length} Pares Mapeados

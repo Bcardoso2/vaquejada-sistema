@@ -323,8 +323,8 @@ export async function GET(request: NextRequest) {
 </head>
 <body>
   <div class="no-print">
-    <span>📊 <strong>Relatório Oficial de Resultados de Pista</strong></span>
-    <button class="btn-action" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+    <span><strong>Relatório Oficial de Resultados de Pista</strong></span>
+    <button class="btn-action" onclick="window.print()">Salvar como PDF / Imprimir</button>
   </div>
 
   <div class="header">

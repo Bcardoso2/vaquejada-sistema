@@ -200,7 +200,11 @@ export default function UsuariosPage() {
   if (erroAcesso) {
     return (
       <div className="max-w-2xl mx-auto my-12 bg-rose-50 border border-rose-200 p-8 rounded-2xl text-center shadow-sm">
-        <div className="text-4xl mb-3">🔒</div>
+        <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full mx-auto mb-3 flex items-center justify-center">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
         <h2 className="text-xl font-bold text-rose-900 mb-2">Acesso Negado</h2>
         <p className="text-sm text-rose-700 mb-6">{erroAcesso}</p>
         <a
@@ -224,7 +228,15 @@ export default function UsuariosPage() {
               : 'bg-rose-950 text-rose-100 border-rose-800'
           }`}
         >
-          <span>{toast.tipo === 'sucesso' ? '✅' : '⚠️'}</span>
+          {toast.tipo === 'sucesso' ? (
+            <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          )}
           <span>{toast.mensagem}</span>
           <button
             onClick={() => setToast(null)}
@@ -339,8 +351,10 @@ export default function UsuariosPage() {
       {modalConfirmarDesativar && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl font-bold mx-auto">
-              ⚠️
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
             </div>
             <div className="text-center">
               <h3 className="text-base font-bold text-slate-900">Desativar Usuário</h3>

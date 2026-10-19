@@ -18,7 +18,7 @@ const NAV_PRINCIPAL = [
   { href: '/mapa', rotulo: 'Mapa da Pista' },
   { href: '/juiz', rotulo: 'Mesa do Juiz' },
   { href: '/resultados', rotulo: 'Classificação' },
-  { href: '/placar', rotulo: '📺 Telão' },
+  { href: '/placar', rotulo: 'Telão' },
   { href: '/financeiro', rotulo: 'Financeiro' },
   { href: '/auditoria', rotulo: 'Auditoria' },
 ];

@@ -195,7 +195,15 @@ export default function VaquejadasPage() {
               : 'bg-rose-950 border-rose-700 text-rose-200'
           }`}
         >
-          <span>{toast.tipo === 'sucesso' ? '✅' : '❌'}</span>
+          {toast.tipo === 'sucesso' ? (
+            <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          )}
           <span>{toast.mensagem}</span>
         </div>
       )}
@@ -292,7 +300,11 @@ export default function VaquejadasPage() {
           <div className="p-12 text-center text-slate-500 font-mono text-sm">Carregando eventos...</div>
         ) : vaquejadasFiltradas.length === 0 ? (
           <div className="p-12 text-center">
-            <span className="text-3xl block mb-2">🏆</span>
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
             <p className="text-slate-600 font-medium">Nenhuma vaquejada encontrada.</p>
             <p className="text-slate-400 text-xs mt-1">Cadastre uma nova vaquejada para iniciar as inscrições.</p>
           </div>
@@ -457,8 +469,10 @@ export default function VaquejadasPage() {
       {modalExcluir && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl mb-3">
-              ⚠️
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mb-3">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
             </div>
             <h3 className="text-lg font-bold text-slate-900">Confirmar exclusão da vaquejada?</h3>
             <p className="text-sm text-slate-500 mt-1 mb-5">

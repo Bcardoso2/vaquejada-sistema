@@ -186,7 +186,15 @@ export default function CavalosPage() {
               : 'bg-rose-950 text-rose-100 border-rose-800'
           }`}
         >
-          <span>{toast.tipo === 'sucesso' ? '✅' : '⚠️'}</span>
+          {toast.tipo === 'sucesso' ? (
+            <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          )}
           <span>{toast.mensagem}</span>
           <button onClick={() => setToast(null)} className="ml-2 text-white/60 hover:text-white font-bold cursor-pointer">
             ×
@@ -226,7 +234,9 @@ export default function CavalosPage() {
             onChange={(e) => setBusca(e.target.value)}
             className="w-full text-xs border border-slate-300 rounded-lg p-2.5 pl-8 focus:outline-none focus:ring-2 focus:ring-amber-400"
           />
-          <span className="absolute left-2.5 top-2.5 text-slate-400 text-xs">🔍</span>
+          <svg className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
         </div>
 
         <select
@@ -277,10 +287,7 @@ export default function CavalosPage() {
                 cavalos.map((cav) => (
                   <tr key={cav.id} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-bold text-slate-900">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">🐎</span>
-                        <span>{cav.nome}</span>
-                      </div>
+                      <span>{cav.nome}</span>
                     </td>
                     <td className="py-3 px-4">
                       <span
@@ -607,8 +614,10 @@ export default function CavalosPage() {
       {modalDesativar && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl font-bold mx-auto">
-              ⚠️
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
             </div>
             <div className="text-center">
               <h3 className="text-base font-bold text-slate-900">Desativar Animal</h3>

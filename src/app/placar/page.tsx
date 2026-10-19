@@ -72,7 +72,7 @@ export default function PlacarPublicoPage() {
       <header className="flex flex-col md:flex-row justify-between items-center border-b-4 border-amber-500 pb-4 mb-6">
         <div className="flex items-center gap-4">
           <div className="bg-amber-500 text-black px-4 py-2 font-black text-2xl md:text-3xl tracking-widest rounded-lg shadow-lg">
-            🐎 TELÃO OFICIAL
+            TELÃO OFICIAL
           </div>
           <div>
             <h1 className="text-2xl md:text-3xl font-black uppercase tracking-wide text-amber-400">
@@ -103,7 +103,7 @@ export default function PlacarPublicoPage() {
             {/* Tag de Status */}
             <div className="flex justify-between items-start mb-4">
               <span className="bg-amber-400 text-black text-lg md:text-xl font-black uppercase px-6 py-2 rounded-xl tracking-wider shadow">
-                🔥 NA PISTA AGORA {dados?.corridaAtual?.bateria_numero ? `• BATERIA ${dados.corridaAtual.bateria_numero}` : ''}
+                NA PISTA AGORA {dados?.corridaAtual?.bateria_numero ? `• BATERIA ${dados.corridaAtual.bateria_numero}` : ''}
               </span>
               {dados?.corridaAtual && (
                 <span className="bg-slate-800 text-amber-300 border border-amber-400/50 text-xl font-mono font-black px-5 py-2 rounded-xl">
@@ -126,7 +126,7 @@ export default function PlacarPublicoPage() {
                         : dados.corridaAtual.puxador_nome}
                     </span>
                     <span className="text-xl md:text-2xl font-bold text-amber-300">
-                      🐴 {dados.corridaAtual.cavalo_oficial_nome || dados.corridaAtual.cavalo_nome || 'Cavalo de Puxa'}
+                      Cavalo: {dados.corridaAtual.cavalo_oficial_nome || dados.corridaAtual.cavalo_nome || 'Cavalo de Puxa'}
                     </span>
                   </div>
                 </div>
@@ -166,7 +166,11 @@ export default function PlacarPublicoPage() {
               </div>
             ) : (
               <div className="my-auto text-center py-16">
-                <span className="text-6xl mb-4 block">⏳</span>
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center text-amber-400">
+                  <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
                 <h3 className="text-3xl md:text-4xl font-bold text-gray-400">Pista em Preparação</h3>
                 <p className="text-gray-500 mt-2 text-lg">Aguardando chamada da próxima dupla pelo operador...</p>
               </div>
@@ -182,7 +186,7 @@ export default function PlacarPublicoPage() {
         <section className="lg:col-span-4 flex flex-col gap-6">
           <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 flex-1 shadow-xl flex flex-col">
             <h2 className="text-xl md:text-2xl font-black text-amber-400 border-b-2 border-slate-700 pb-3 mb-4 flex items-center justify-between">
-              <span>📋 A SEGUIR (PREPAREM-SE)</span>
+              <span>A SEGUIR (PREPAREM-SE)</span>
               <span className="text-xs font-normal text-gray-400">Próximas duplas</span>
             </h2>
 
@@ -209,14 +213,13 @@ export default function PlacarPublicoPage() {
                     </div>
                     {p.cavalo_oficial_nome || p.cavalo_nome ? (
                       <div className="text-xs text-amber-300/80 mt-1 truncate">
-                        🐴 {p.cavalo_oficial_nome || p.cavalo_nome}
+                        Cavalo: {p.cavalo_oficial_nome || p.cavalo_nome}
                       </div>
                     ) : null}
                   </div>
                 ))
               ) : (
                 <div className="text-center py-12 text-gray-500">
-                  <span className="text-4xl block mb-2">📋</span>
                   Nenhuma dupla aguardando na fila imediata.
                 </div>
               )}
@@ -229,7 +232,7 @@ export default function PlacarPublicoPage() {
       <footer className="mt-6 bg-slate-900 border-2 border-slate-800 rounded-2xl p-4 md:p-5 shadow-xl">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-amber-400 font-black text-base md:text-lg uppercase">
-            🏆 ÚLTIMOS RESULTADOS JULGADOS
+            ÚLTIMOS RESULTADOS JULGADOS
           </span>
           <span className="text-xs text-gray-500">(Atualizado em tempo real pelo Juiz)</span>
         </div>

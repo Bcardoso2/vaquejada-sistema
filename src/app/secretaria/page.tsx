@@ -641,7 +641,11 @@ export default function SecretariaPage() {
                       onClick={() => setMapaAberto(true)}
                       className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-lg cursor-pointer shadow-sm inline-flex items-center gap-2 transition hover:scale-[1.02]"
                     >
-                      <span>🗂️</span> Escolher Kit (Baixa + Alta)
+                      <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="4" width="18" height="16" rx="2" />
+                        <path d="M7 8h10M7 12h10M7 16h6" />
+                      </svg>
+                      <span>Escolher Kit (Baixa + Alta)</span>
                     </button>
                   </div>
                 )}

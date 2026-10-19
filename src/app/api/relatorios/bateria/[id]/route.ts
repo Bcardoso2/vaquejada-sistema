@@ -240,8 +240,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 </head>
 <body>
   <div class="no-print">
-    <span>📄 <strong>Súmula Oficial de Pista (Pronta para PDF / Impressão A4)</strong></span>
-    <button class="btn-imprimir" onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+    <span><strong>Súmula Oficial de Pista (Pronta para PDF / Impressão A4)</strong></span>
+    <button class="btn-imprimir" onclick="window.print()">Salvar como PDF / Imprimir</button>
   </div>
 
   <div class="header">
