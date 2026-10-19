@@ -219,19 +219,57 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Se a senha pertence a um kit, buscar as demais senhas do mesmo kit
+    // 3. Resolução segura de senhas para venda (Kit de 2 senhas ou Senha Solteira)
     let senhasDoProcesso: any[] = [senhaPrincipal];
-    if (senhaPrincipal.kit_id) {
+    const codigoAltaInformado = String(body.codigoAlta || body.senhaAltaCodigo || '').trim();
+
+    if (codigoAltaInformado) {
+      // Caso 3A: Venda explícita de kit de 2 senhas selecionado na interface (Baixa + Alta)
+      const codAltaPad = /^\d+$/.test(codigoAltaInformado) ? codigoAltaInformado.padStart(3, '0') : codigoAltaInformado;
+      const resAlta = await client.query(
+        `SELECT s.*, k.codigo as kit_codigo
+         FROM senhas s
+         LEFT JOIN kits k ON k.id = s.kit_id
+         WHERE (s.vaquejada_id = $1 OR s.vaquejada_id IS NULL)
+           AND (s.codigo = $2 OR s.codigo = $3)
+           AND s.id != $4
+         FOR UPDATE OF s`,
+        [vaquejadaId, codigoAltaInformado, codAltaPad, senhaPrincipal.id]
+      );
+
+      if (resAlta.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `A senha alta (${codigoAltaInformado}) selecionada no kit não foi encontrada no evento.` },
+          { status: 404 }
+        );
+      }
+
+      const sAlta = resAlta.rows[0];
+      if (['PAGA', 'VENDIDA', 'UTILIZADA', 'CANCELADA'].includes(sAlta.estado_comercial)) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `A senha alta parceira (${sAlta.codigo}) já está ocupada ou cancelada. O kit não pode ser vendido.` },
+          { status: 409 }
+        );
+      }
+
+      senhasDoProcesso.push(sAlta);
+    } else if (senhaPrincipal.kit_id && senhaPrincipal.kit_id !== 'kit-inventario-individual' && senhaPrincipal.kit_codigo !== 'INV-INDIVIDUAL') {
+      // Caso 3B: A senha possui um kit real vinculado no banco e busca estritamente 1 parceira
       const outrasSenhasKit = await client.query(
         `SELECT s.*, k.codigo as kit_codigo
          FROM senhas s
          LEFT JOIN kits k ON k.id = s.kit_id
          WHERE s.kit_id = $1 AND s.id != $2
+         ORDER BY s.codigo ASC
+         LIMIT 1
          FOR UPDATE OF s`,
         [senhaPrincipal.kit_id, senhaPrincipal.id]
       );
 
-      for (const outSenha of outrasSenhasKit.rows) {
+      if (outrasSenhasKit.rowCount && outrasSenhasKit.rowCount > 0) {
+        const outSenha = outrasSenhasKit.rows[0];
         if (['PAGA', 'VENDIDA', 'UTILIZADA', 'CANCELADA'].includes(outSenha.estado_comercial)) {
           await client.query('ROLLBACK');
           return NextResponse.json(
@@ -243,31 +281,37 @@ export async function POST(request: Request) {
       }
     }
 
-    // Suporte a pareamento híbrido: se o kit não tiver as duas senhas no mesmo kit_id, busca a alta informada
-    const codigoAltaInformado = String(body.codigoAlta || body.senhaAltaCodigo || '').trim();
-    if (codigoAltaInformado && senhasDoProcesso.length === 1) {
-      const codAltaPad = /^\d+$/.test(codigoAltaInformado) ? codigoAltaInformado.padStart(3, '0') : codigoAltaInformado;
-      const resAlta = await client.query(
-        `SELECT s.*, k.codigo as kit_codigo
-         FROM senhas s
-         LEFT JOIN kits k ON k.id = s.kit_id
-         WHERE (s.vaquejada_id = $1 OR s.vaquejada_id IS NULL)
-           AND (s.codigo = $2 OR s.codigo = $3)
-         FOR UPDATE OF s`,
-        [vaquejadaId, codigoAltaInformado, codAltaPad]
+    // Trava de segurança incondicional: kits de vaquejada nunca podem conter mais de 2 senhas
+    if (senhasDoProcesso.length > 2) {
+      await client.query('ROLLBACK');
+      return NextResponse.json(
+        { error: 'Trava de segurança: Uma venda não pode processar mais de 2 senhas simultâneas.' },
+        { status: 400 }
+      );
+    }
+
+    // Se for venda de kit de 2 senhas, garante vínculo no mesmo kit_id
+    if (senhasDoProcesso.length === 2) {
+      const s1 = senhasDoProcesso[0];
+      const s2 = senhasDoProcesso[1];
+      const kitIdDestino = s1.kit_id && s1.kit_id === s2.kit_id && s1.kit_id !== 'kit-inventario-individual'
+        ? s1.kit_id
+        : `kit-${s1.codigo}`;
+
+      // Assegura existência do kit na tabela kits
+      await client.query(
+        `INSERT INTO kits (id, vaquejada_id, codigo, criado_em)
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO NOTHING`,
+        [kitIdDestino, vaquejadaId, `KIT-${s1.codigo}`]
       );
 
-      if (resAlta.rowCount && resAlta.rowCount > 0) {
-        const sAlta = resAlta.rows[0];
-        if (['PAGA', 'VENDIDA', 'UTILIZADA', 'CANCELADA'].includes(sAlta.estado_comercial)) {
-          await client.query('ROLLBACK');
-          return NextResponse.json(
-            { error: `A senha alta (${sAlta.codigo}) já está ocupada ou cancelada. O kit não pode ser vendido.` },
-            { status: 409 }
-          );
-        }
-        senhasDoProcesso.push(sAlta);
-      }
+      await client.query(
+        `UPDATE senhas SET kit_id = $1 WHERE id IN ($2, $3)`,
+        [kitIdDestino, s1.id, s2.id]
+      );
+      s1.kit_id = kitIdDestino;
+      s2.kit_id = kitIdDestino;
     }
 
     // 4. Buscar bois suficientes para todas as senhas (2 bois por senha)
@@ -419,12 +463,15 @@ export async function POST(request: Request) {
       motivo: `Venda registrada na secretaria (${formaPagamento})`,
     });
 
+    const nomesSenhas = senhasVendidas.map(s => s.codigo).join(' e ');
     return NextResponse.json({
       success: true,
       tipo: senhasVendidas.length > 1 ? 'KIT' : 'SOLTEIRA',
       totalSenhas: senhasVendidas.length,
       senhas: senhasVendidas,
-      mensagem: `Venda da senha/kit ${senhasVendidas.map(s => s.codigo).join(' e ')} confirmada com sucesso!`,
+      mensagem: senhasVendidas.length === 2
+        ? `Venda do Kit confirmada com sucesso! (Senha Baixa: ${senhasVendidas[0].codigo} + Senha Alta: ${senhasVendidas[1].codigo})`
+        : `Venda da senha ${nomesSenhas} confirmada com sucesso!`,
     });
   } catch (error) {
     try {
