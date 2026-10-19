@@ -52,12 +52,36 @@ export default function MapaPistaPage() {
   const [confirmacaoZero, setConfirmacaoZero] = useState<{ id: string; timer: NodeJS.Timeout | null } | null>(null);
   const [confirmacaoCancelar, setConfirmacaoCancelar] = useState<{ id: string; timer: NodeJS.Timeout | null } | null>(null);
 
-  // Cronômetro de Cancela
+  // Cronômetro de Cancela sincronizado no servidor
   const [tempoCancelaPadrao, setTempoCancelaPadrao] = useState<number>(30);
   const [tempoRestanteCancela, setTempoRestanteCancela] = useState<number | null>(null);
   const [cancelaAtiva, setCancelaAtiva] = useState<boolean>(false);
-  const [avisoSonoro, setAvisoSonoro] = useState<boolean>(true);
-  const cancelaTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [cancelaStatus, setCancelaStatus] = useState<string>('PARADA');
+
+  // Controle de Áudio com ativação explícita por toque do operador
+  const [audioHabilitado, setAudioHabilitado] = useState<boolean>(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Desfazer de 10 segundos após registrar resultado
+  const [ultimoResultado, setUltimoResultado] = useState<{
+    corridaId: string;
+    senhaCodigo: string;
+    resultado: string;
+    tempoRestante: number;
+  } | null>(null);
+
+  // Modal de correção administrativa de resultado (ADMIN)
+  const [modalCorrecaoAdmin, setModalCorrecaoAdmin] = useState<{
+    aberto: boolean;
+    corrida: Corrida | null;
+    novoResultado: string;
+    motivo: string;
+  }>({
+    aberto: false,
+    corrida: null,
+    novoResultado: 'VALEU',
+    motivo: '',
+  });
 
   // Modais
   const [modalExcecao, setModalExcecao] = useState<{ aberto: boolean; corrida: Corrida | null; motivo: string }>({
@@ -76,11 +100,39 @@ export default function MapaPistaPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Áudio sintetizado via Web Audio API para avisos de cancela (sem arquivos externos)
-  const tocarSomCancela = (frequencia: number, duracao: number) => {
-    if (!avisoSonoro || typeof window === 'undefined') return;
+  // Ativação explícita de áudio por gesto do operador (requisito dos navegadores)
+  const ativarAudio = async () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (typeof window === 'undefined') return;
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioCtx();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+      setAudioHabilitado(true);
+      // Bip de confirmação
+      tocarSomCancela(880, 150);
+      exibirToast('🔊 Áudio ativado com sucesso para avisos de cancela!');
+    } catch (e) {
+      console.error('Falha ao inicializar AudioContext:', e);
+      exibirToast('Não foi possível ativar o áudio neste navegador', 'aviso');
+    }
+  };
+
+  const desativarAudio = () => {
+    setAudioHabilitado(false);
+    exibirToast('🔇 Áudio desativado.');
+  };
+
+  // Áudio sintetizado via Web Audio API para avisos de cancela
+  const tocarSomCancela = (frequencia: number, duracao: number) => {
+    if (!audioHabilitado || typeof window === 'undefined') return;
+    try {
+      const audioCtx = audioContextRef.current;
+      if (!audioCtx || audioCtx.state !== 'running') return;
+
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
@@ -91,10 +143,9 @@ export default function MapaPistaPage() {
       osc.start();
       setTimeout(() => {
         osc.stop();
-        audioCtx.close();
       }, duracao);
     } catch {
-      // Ignora erro se áudio não suportado
+      // Ignora erro se áudio falhar
     }
   };
 
@@ -112,7 +163,6 @@ export default function MapaPistaPage() {
       if (Array.isArray(dataMapa)) setCorridas(dataMapa);
       if (Array.isArray(dataBat)) {
         setBaterias(dataBat);
-        // Selecionar por padrão a bateria em andamento se existir
         const batAndamento = dataBat.find((b: BateriaInfo) => b.status === 'EM_ANDAMENTO');
         if (batAndamento && bateriaSelecionada === 'TODAS') {
           setBateriaSelecionada(batAndamento.id);
@@ -129,59 +179,93 @@ export default function MapaPistaPage() {
     carregarDados();
   }, []);
 
-  // Lógica do Cronômetro de Cancela
-  const iniciarCancela = (tempoSegundos?: number) => {
-    const tempo = tempoSegundos || tempoCancelaPadrao;
-    setTempoRestanteCancela(tempo);
-    setCancelaAtiva(true);
-    tocarSomCancela(880, 200); // Bip inicial de chamada
+  // Sincronizar Cronômetro de Cancela com o Servidor
+  const sincronizarCancelaServidor = async () => {
+    try {
+      const res = await fetch('/api/cancela?vaquejada_id=vq-2026-portal');
+      if (!res.ok) return;
+      const data = await res.json();
+      setCancelaStatus(data.status);
+      setTempoRestanteCancela(data.tempoRestante);
+      setCancelaAtiva(data.status === 'RODANDO');
+
+      if (data.status === 'RODANDO' && data.tempoRestante <= 5 && data.tempoRestante > 0) {
+        tocarSomCancela(750, 150); // Bips de alerta nos 5s finais
+      } else if (data.status === 'ESTOURADA') {
+        tocarSomCancela(440, 700);
+      }
+    } catch {
+      // Erro transitório de rede
+    }
   };
 
-  const pararCancela = () => {
-    setCancelaAtiva(false);
-    setTempoRestanteCancela(null);
-    if (cancelaTimerRef.current) clearInterval(cancelaTimerRef.current);
-  };
-
+  // Intervalo de sincronização da cancela a cada 1s quando em execução
   useEffect(() => {
-    if (!cancelaAtiva || tempoRestanteCancela === null) return;
+    sincronizarCancelaServidor();
+    const interval = setInterval(() => {
+      sincronizarCancelaServidor();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [audioHabilitado]);
 
-    cancelaTimerRef.current = setInterval(() => {
-      setTempoRestanteCancela((prev) => {
-        if (prev === null || prev <= 1) {
-          // TEMPO ESTOURADO!
-          pararCancela();
-          tocarSomCancela(440, 800); // Som longo de estouro
-          exibirToast('⚠️ TEMPO DE CANCELA ESGOTADO! Registrado na auditoria.', 'aviso');
+  // Contagem regressiva da janela de 10s para desfazer resultado
+  useEffect(() => {
+    if (!ultimoResultado) return;
+    if (ultimoResultado.tempoRestante <= 0) {
+      setUltimoResultado(null);
+      return;
+    }
 
-          // Registrar na auditoria
-          fetch('/api/auditoria', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              acao: 'ESTOURO_TEMPO_CANCELA',
-              entidade: 'pista',
-              detalhes: { tempoTolerancia: tempoCancelaPadrao, corridaAtiva: corridaAtiva?.id || null },
-              motivo: `Tempo de cancela (${tempoCancelaPadrao}s) esgotado para apresentação da dupla`,
-            }),
-          }).catch(() => {});
-
-          return 0;
-        }
-
-        // Bips curtos nos últimos 5 segundos
-        if (prev <= 6 && prev > 1) {
-          tocarSomCancela(750, 150);
-        }
-
-        return prev - 1;
+    const timer = setInterval(() => {
+      setUltimoResultado((prev) => {
+        if (!prev || prev.tempoRestante <= 1) return null;
+        return { ...prev, tempoRestante: prev.tempoRestante - 1 };
       });
     }, 1000);
 
-    return () => {
-      if (cancelaTimerRef.current) clearInterval(cancelaTimerRef.current);
-    };
-  }, [cancelaAtiva]);
+    return () => clearInterval(timer);
+  }, [ultimoResultado]);
+
+  // Comandos de cancela chamando a rota sincronizada do servidor
+  const dispararCancelaServidor = async (tempoSegundos?: number) => {
+    const tempo = tempoSegundos || tempoCancelaPadrao;
+    try {
+      const res = await fetch('/api/cancela', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'DISPARAR',
+          vaquejada_id: 'vq-2026-portal',
+          corrida_id: corridaAtiva?.id || null,
+          tempo_tolerancia: tempo,
+        }),
+      });
+      if (res.ok) {
+        tocarSomCancela(880, 200);
+        await sincronizarCancelaServidor();
+      }
+    } catch {
+      exibirToast('Erro ao sincronizar cancela no servidor', 'erro');
+    }
+  };
+
+  const pararCancelaServidor = async () => {
+    try {
+      const res = await fetch('/api/cancela', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'PARAR',
+          vaquejada_id: 'vq-2026-portal',
+        }),
+      });
+      if (res.ok) {
+        await sincronizarCancelaServidor();
+      }
+    } catch {
+      exibirToast('Erro ao parar cancela', 'erro');
+    }
+  };
 
   // Ações de Pista
   const executarAcao = async (acao: string, corridaId: string, resultado?: string) => {
@@ -194,12 +278,81 @@ export default function MapaPistaPage() {
       const data = await res.json();
       if (res.ok) {
         exibirToast(`Ação ${acao} executada com sucesso!`);
-        if (acao === 'INICIAR' || acao === 'CONCLUIR') {
-          pararCancela();
+        if (acao === 'INICIAR') {
+          await dispararCancelaServidor();
+        } else if (acao === 'REGISTRAR_RESULTADO' || acao === 'CONCLUIR') {
+          await pararCancelaServidor();
+          if (resultado) {
+            // Iniciar janela de 10 segundos para desfazer
+            const corrida = corridas.find((c) => c.id === corridaId);
+            setUltimoResultado({
+              corridaId,
+              senhaCodigo: corrida?.senha_codigo || '',
+              resultado,
+              tempoRestante: 10,
+            });
+          }
         }
         await carregarDados();
       } else {
         exibirToast(data.error || 'Erro ao executar ação', 'erro');
+      }
+    } catch {
+      exibirToast('Erro de comunicação com o servidor', 'erro');
+    }
+  };
+
+  // Desfazer resultado lançado nos últimos 10 segundos
+  const handleDesfazerResultado = async () => {
+    if (!ultimoResultado) return;
+    try {
+      const res = await fetch('/api/mapa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'DESFAZER_RESULTADO',
+          corridaId: ultimoResultado.corridaId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        exibirToast('↩️ Resultado desfeito com sucesso! Corrida retornou à pista.', 'sucesso');
+        setUltimoResultado(null);
+        await carregarDados();
+      } else {
+        exibirToast(data.error || 'Não foi possível desfazer o resultado', 'erro');
+      }
+    } catch {
+      exibirToast('Erro ao desfazer resultado', 'erro');
+    }
+  };
+
+  // Salvar Correção de Resultado pelo Administrador (com auditoria e motivo)
+  const handleSalvarCorrecaoAdmin = async () => {
+    if (!modalCorrecaoAdmin.corrida) return;
+    if (!modalCorrecaoAdmin.motivo || modalCorrecaoAdmin.motivo.trim().length < 5) {
+      exibirToast('Informe o motivo da correção (mínimo 5 caracteres)', 'aviso');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/mapa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          acao: 'CORRIGIR_RESULTADO_ADMIN',
+          corridaId: modalCorrecaoAdmin.corrida.id,
+          novoResultado: modalCorrecaoAdmin.novoResultado,
+          motivo: modalCorrecaoAdmin.motivo.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        exibirToast('✅ Resultado corrigido e auditado pelo administrador!', 'sucesso');
+        setModalCorrecaoAdmin({ aberto: false, corrida: null, novoResultado: 'VALEU', motivo: '' });
+        await carregarDados();
+      } else {
+        exibirToast(data.error || 'Erro ao corrigir resultado', 'erro');
       }
     } catch {
       exibirToast('Erro de comunicação com o servidor', 'erro');
@@ -343,6 +496,29 @@ export default function MapaPistaPage() {
         </div>
       </div>
 
+      {/* BANNER FLUTUANTE DE DESFAZER RESULTADO (10 SEGUNDOS) */}
+      {ultimoResultado && (
+        <div className="bg-amber-500 text-black p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border-4 border-black animate-pulse print:hidden">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">⚠️</span>
+            <div>
+              <p className="font-black text-lg uppercase tracking-wide">
+                Resultado Lançado: Senha #{ultimoResultado.senhaCodigo} ➔ {ultimoResultado.resultado}
+              </p>
+              <p className="text-xs font-bold text-black/80">
+                Toque acidental? Você tem <span className="underline font-black text-sm">{ultimoResultado.tempoRestante}s</span> para desfazer e retornar a corrida para a pista.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleDesfazerResultado}
+            className="min-h-[56px] px-6 bg-black hover:bg-slate-900 text-amber-400 font-black text-base rounded-xl shadow-lg transition transform active:scale-95 flex items-center gap-2 border-2 border-amber-400"
+          >
+            ↩️ DESFAZER AGORA ({ultimoResultado.tempoRestante}s)
+          </button>
+        </div>
+      )}
+
       {/* CRONÔMETRO DE CANCELA & CORRIDA ATIVA (CARD DESTAQUE) */}
       {corridaAtiva && (
         <div className={`${modoPista ? 'bg-black border-4 border-amber-400' : 'bg-white border-2 border-slate-900'} rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden print:hidden`}>
@@ -354,12 +530,18 @@ export default function MapaPistaPage() {
               </span>
             </div>
 
-            {/* PAINEL DO CRONÔMETRO DE CANCELA */}
-            <div className="flex items-center gap-4 bg-slate-900 border-2 border-slate-700 p-3 rounded-2xl">
-              <span className="text-xs font-bold text-gray-400 uppercase">CANCELA:</span>
+            {/* PAINEL DO CRONÔMETRO DE CANCELA SINCRONIZADO NO SERVIDOR */}
+            <div className="flex flex-wrap items-center gap-4 bg-slate-900 border-2 border-slate-700 p-3 rounded-2xl">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">CANCELA (SERVIDOR)</span>
+                <span className={`text-[10px] font-black uppercase ${cancelaStatus === 'RODANDO' ? 'text-emerald-400' : cancelaStatus === 'ESTOURADA' ? 'text-rose-400' : 'text-gray-400'}`}>
+                  {cancelaStatus}
+                </span>
+              </div>
+
               <div
                 className={`text-3xl md:text-4xl font-mono font-black px-4 py-1 rounded-xl border-2 ${
-                  tempoRestanteCancela === null
+                  tempoRestanteCancela === null || cancelaStatus === 'PARADA'
                     ? 'text-gray-500 border-gray-700 bg-black'
                     : tempoRestanteCancela > 15
                     ? 'text-emerald-400 border-emerald-500 bg-emerald-950/60'
@@ -368,21 +550,21 @@ export default function MapaPistaPage() {
                     : 'text-rose-400 border-rose-500 bg-rose-950/80 animate-pulse'
                 }`}
               >
-                {tempoRestanteCancela !== null
+                {tempoRestanteCancela !== null && cancelaStatus === 'RODANDO'
                   ? `00:${tempoRestanteCancela.toString().padStart(2, '0')}`
                   : `00:${tempoCancelaPadrao}`}
               </div>
 
               {cancelaAtiva ? (
                 <button
-                  onClick={pararCancela}
+                  onClick={pararCancelaServidor}
                   className="min-h-[44px] px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl"
                 >
                   ⏹ Parar
                 </button>
               ) : (
                 <button
-                  onClick={() => iniciarCancela(tempoCancelaPadrao)}
+                  onClick={() => dispararCancelaServidor(tempoCancelaPadrao)}
                   className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
                 >
                   ▶ Disparar
@@ -396,7 +578,7 @@ export default function MapaPistaPage() {
                     key={t}
                     onClick={() => {
                       setTempoCancelaPadrao(t);
-                      if (cancelaAtiva) iniciarCancela(t);
+                      if (cancelaAtiva) dispararCancelaServidor(t);
                     }}
                     className={`px-2 py-1 rounded font-bold ${
                       tempoCancelaPadrao === t ? 'bg-amber-500 text-black' : 'bg-slate-800 text-gray-300'
@@ -407,14 +589,28 @@ export default function MapaPistaPage() {
                 ))}
               </div>
 
-              {/* Botão de Som */}
-              <button
-                onClick={() => setAvisoSonoro(!avisoSonoro)}
-                className={`p-2 rounded-lg text-sm ${avisoSonoro ? 'text-amber-400' : 'text-gray-500'}`}
-                title={avisoSonoro ? 'Avisos sonoros ligados' : 'Avisos sonoros mudos'}
-              >
-                {avisoSonoro ? '🔊' : '🔇'}
-              </button>
+              {/* Controle de Áudio Explícito com Indicação de Estado */}
+              <div className="flex items-center gap-2 border-l border-slate-700 pl-3">
+                {audioHabilitado ? (
+                  <button
+                    onClick={desativarAudio}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950 border border-emerald-500 text-emerald-300 text-xs font-black shadow"
+                    title="Toque para mutar áudio da cancela"
+                  >
+                    <span>🔊</span>
+                    <span>ÁUDIO ATIVO</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={ativarAudio}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black shadow animate-bounce"
+                    title="Navegadores exigem toque para tocar som"
+                  >
+                    <span>🔇</span>
+                    <span>ATIVAR SOM (TOQUE)</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -457,10 +653,7 @@ export default function MapaPistaPage() {
             <div className="lg:col-span-6 flex flex-col gap-3">
               {corridaAtiva.estado === 'CHAMADA' && (
                 <button
-                  onClick={() => {
-                    executarAcao('INICIAR', corridaAtiva.id);
-                    iniciarCancela();
-                  }}
+                  onClick={() => executarAcao('INICIAR', corridaAtiva.id)}
                   className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-3 uppercase tracking-wider"
                 >
                   🚪 ABRIR PORTEIRA (INICIAR CORRIDA)
@@ -606,17 +799,37 @@ export default function MapaPistaPage() {
                     </td>
                     {/* BOTÕES DE AÇÃO NA TABELA COM MÍNIMO 56PX */}
                     <td className="py-4 px-4 text-right print:hidden">
-                      {c.estado === 'EM_ESPERA' && (
-                        <button
-                          onClick={() => {
-                            executarAcao('CHAMAR', c.id);
-                            iniciarCancela();
-                          }}
-                          className="min-h-[56px] px-5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow transition"
-                        >
-                          📢 CHAMAR PISTA
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {c.estado === 'EM_ESPERA' && (
+                          <button
+                            onClick={() => {
+                              executarAcao('CHAMAR', c.id);
+                              dispararCancelaServidor();
+                            }}
+                            className="min-h-[56px] px-5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow transition"
+                          >
+                            📢 CHAMAR PISTA
+                          </button>
+                        )}
+
+                        {c.estado === 'CONCLUIDA' && (
+                          <button
+                            onClick={() =>
+                              setModalCorrecaoAdmin({
+                                aberto: true,
+                                corrida: c,
+                                novoResultado: c.resultado_final === 'VALEU' ? 'ZERO' : 'VALEU',
+                                motivo: '',
+                              })
+                            }
+                            className="min-h-[44px] px-3 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 font-bold text-xs rounded-xl shadow transition flex items-center gap-1.5"
+                            title="Correção administrativa após 10s (exige ADMIN e justificativa auditada)"
+                          >
+                            <span>✏️</span>
+                            <span>Corrigir (Admin)</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -625,6 +838,67 @@ export default function MapaPistaPage() {
           </table>
         </div>
       </div>
+
+      {/* MODAL PARA CORREÇÃO ADMINISTRATIVA DE RESULTADO (AUDITADO) */}
+      {modalCorrecaoAdmin.aberto && modalCorrecaoAdmin.corrida && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl text-white">
+            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase">✏️ Correção Administrativa</h3>
+            <p className="text-xs text-gray-400 mb-4">
+              Esta ação é restrita a administradores e será registrada integralmente no log de auditoria com data, operador e motivo.
+            </p>
+
+            <div className="bg-black/60 p-4 rounded-xl border border-slate-700 mb-4 text-sm">
+              <p className="text-gray-300 font-bold">
+                Senha #{modalCorrecaoAdmin.corrida.senha_codigo} ({modalCorrecaoAdmin.corrida.senha_categoria})
+              </p>
+              <p className="text-xs text-gray-400">
+                Puxador: {modalCorrecaoAdmin.corrida.puxador_nome} • Resultado Atual:{' '}
+                <span className="font-black text-amber-400">{modalCorrecaoAdmin.corrida.resultado_final}</span>
+              </p>
+            </div>
+
+            <label className="text-xs font-bold text-gray-300 uppercase block mb-1">
+              Novo Resultado Oficial:
+            </label>
+            <select
+              value={modalCorrecaoAdmin.novoResultado}
+              onChange={(e) => setModalCorrecaoAdmin({ ...modalCorrecaoAdmin, novoResultado: e.target.value })}
+              className="w-full min-h-[50px] px-3 bg-black border-2 border-slate-700 rounded-xl font-bold text-white mb-4"
+            >
+              <option value="VALEU">🟢 VALEU BOI</option>
+              <option value="ZERO">🔴 ZERO</option>
+              <option value="RETORNO">🔄 BOI DE RETORNO</option>
+            </select>
+
+            <label className="text-xs font-bold text-gray-300 uppercase block mb-1">
+              Justificativa / Motivo da Correção (Obrigatório):
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Ex.: Correção após revisão de filmagem pela comissão julgadora..."
+              value={modalCorrecaoAdmin.motivo}
+              onChange={(e) => setModalCorrecaoAdmin({ ...modalCorrecaoAdmin, motivo: e.target.value })}
+              className="w-full p-3 bg-black border-2 border-slate-700 rounded-xl text-sm font-medium text-white mb-6"
+            />
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setModalCorrecaoAdmin({ aberto: false, corrida: null, novoResultado: 'VALEU', motivo: '' })}
+                className="min-h-[50px] px-5 bg-slate-800 text-gray-300 font-bold rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSalvarCorrecaoAdmin}
+                className="min-h-[50px] px-6 bg-amber-500 text-black font-black rounded-xl hover:bg-amber-600 transition"
+              >
+                Salvar Correção Auditada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL PARA GERAR BATERIAS */}
       {modalGerarBaterias.aberto && (

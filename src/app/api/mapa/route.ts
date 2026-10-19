@@ -169,8 +169,9 @@ export async function POST(request: Request) {
         // VALEU ou ZERO
         await query(
           `UPDATE corridas_mapa 
-           SET estado = 'CONCLUIDA', resultado_inicial = $1, resultado_final = $1, 
-               estado_julgamento = 'HOMOLOGADO', concluida_em = CURRENT_TIMESTAMP 
+           SET estado = 'CONCLUIDA', resultado_anterior = resultado_final, resultado_inicial = $1, resultado_final = $1, 
+               estado_julgamento = 'HOMOLOGADO', concluida_em = CURRENT_TIMESTAMP,
+               resultado_registrado_em = CURRENT_TIMESTAMP
            WHERE id = $2`,
           [resultado, corridaId]
         );
@@ -182,12 +183,97 @@ export async function POST(request: Request) {
           acao: 'RESULTADO_PISTA',
           entidade: 'corridas_mapa',
           entidadeId: corridaId,
-          detalhes: { resultado },
+          detalhes: { resultado, desfazerDisponivelAteSegundos: 10 },
           motivo: `Julgamento de pista: ${resultado}`
         });
 
-        return NextResponse.json({ success: true, resultado });
+        return NextResponse.json({ success: true, resultado, podeDesfazerAte: 10 });
       }
+    }
+
+    // 4. Desfazer resultado em até 10 segundos para erros de toque
+    if (acao === 'DESFAZER_RESULTADO') {
+      const corridaOrig = await query('SELECT * FROM corridas_mapa WHERE id = $1', [corridaId]);
+      if (corridaOrig.rows.length === 0) {
+        return NextResponse.json({ error: 'Corrida não encontrada' }, { status: 404 });
+      }
+      const c = corridaOrig.rows[0];
+
+      if (!c.resultado_registrado_em) {
+        return NextResponse.json({ error: 'Não há resultado recente registrado para desfazer nesta corrida.' }, { status: 400 });
+      }
+
+      const agora = Date.now();
+      const registradoEm = new Date(c.resultado_registrado_em).getTime();
+      const diferencaSegundos = Math.floor((agora - registradoEm) / 1000);
+
+      if (diferencaSegundos > 10) {
+        return NextResponse.json({
+          error: `O prazo de 10 segundos para desfazer o resultado expirou (${diferencaSegundos}s decorridos). Correções posteriores exigem autorização do administrador.`
+        }, { status: 400 });
+      }
+
+      // Reverter para EM_EXECUCAO
+      await query(
+        `UPDATE corridas_mapa 
+         SET estado = 'EM_EXECUCAO', resultado_final = resultado_anterior, resultado_registrado_em = NULL, concluida_em = NULL 
+         WHERE id = $1`,
+        [corridaId]
+      );
+
+      await registrarAuditoria({
+        usuarioId,
+        usuarioNome: operadorNome,
+        papel,
+        acao: 'DESFAZER_RESULTADO',
+        entidade: 'corridas_mapa',
+        entidadeId: corridaId,
+        detalhes: { resultadoRevertido: c.resultado_final, decorridoSegundos: diferencaSegundos },
+        motivo: `Desfazer acionado pelo operador dentro da janela de tolerância de 10s`
+      });
+
+      return NextResponse.json({ success: true, mensagem: 'Resultado revertido com sucesso. Corrida retornou para EM_EXECUCAO.' });
+    }
+
+    // 5. Correção de resultado pelo ADMIN após janela de 10 segundos
+    if (acao === 'CORRIGIR_RESULTADO_ADMIN') {
+      if (papel !== 'ADMIN') {
+        return NextResponse.json({ error: 'Apenas administradores podem corrigir resultados após a janela de 10 segundos.' }, { status: 403 });
+      }
+
+      const { novoResultado, motivo } = body;
+      if (!novoResultado || !['VALEU', 'ZERO', 'RETORNO'].includes(novoResultado)) {
+        return NextResponse.json({ error: 'Novo resultado inválido (use VALEU, ZERO ou RETORNO).' }, { status: 400 });
+      }
+      if (!motivo || motivo.trim().length < 5) {
+        return NextResponse.json({ error: 'O motivo detalhado da correção pelo administrador é obrigatório (mínimo 5 caracteres).' }, { status: 400 });
+      }
+
+      const corridaOrig = await query('SELECT * FROM corridas_mapa WHERE id = $1', [corridaId]);
+      if (corridaOrig.rows.length === 0) {
+        return NextResponse.json({ error: 'Corrida não encontrada' }, { status: 404 });
+      }
+      const c = corridaOrig.rows[0];
+
+      await query(
+        `UPDATE corridas_mapa 
+         SET resultado_final = $1, corrigido_por_admin_id = $2, motivo_correcao_admin = $3, atualizado_em = CURRENT_TIMESTAMP
+         WHERE id = $4`,
+        [novoResultado, usuarioId, motivo.trim(), corridaId]
+      );
+
+      await registrarAuditoria({
+        usuarioId,
+        usuarioNome: operadorNome,
+        papel: 'ADMIN',
+        acao: 'CORRECAO_RESULTADO_ADMIN',
+        entidade: 'corridas_mapa',
+        entidadeId: corridaId,
+        detalhes: { resultadoAnterior: c.resultado_final, novoResultado, motivo: motivo.trim() },
+        motivo: `Correção administrativa do resultado da corrida: ${motivo.trim()}`
+      });
+
+      return NextResponse.json({ success: true, mensagem: 'Resultado corrigido e auditado pelo administrador com sucesso.' });
     }
 
     // 4. Lançar Exceção no Mapa (RN-07)
