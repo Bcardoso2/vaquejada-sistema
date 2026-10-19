@@ -31,10 +31,12 @@ export async function POST(request: NextRequest) {
     // 1. Verificar Rate Limiting refinado por usuário E por IP
     const rateLimit = await verificarTentativasLogin(emailLimpo, ip);
     if (!rateLimit.permitido) {
+      const mensagemErro = rateLimit.motivo === 'IP_BLOQUEADO'
+        ? `Muitas tentativas incorretas originadas deste endereço IP. Endereço IP temporariamente bloqueado por 15 minutos. Tente novamente em ${rateLimit.tempoRestanteSegundos || 900} segundos.`
+        : `Muitas tentativas incorretas deste endereço IP para esta conta. Acesso temporariamente bloqueado por segurança. Tente novamente em ${rateLimit.tempoRestanteSegundos || 900} segundos.`;
+
       return NextResponse.json(
-        {
-          error: `Muitas tentativas incorretas deste endereço IP para esta conta. Acesso temporariamente bloqueado por segurança. Tente novamente em ${rateLimit.tempoRestanteSegundos || 900} segundos.`,
-        },
+        { error: mensagemErro },
         { status: 429 }
       );
     }

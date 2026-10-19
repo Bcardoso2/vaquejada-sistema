@@ -77,21 +77,30 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    const competidor = {
-      id: c.id,
-      nome: c.nome,
-      apelido_pista: c.apelido_pista || '',
-      cpf: podeVerDadosPessoais ? formatarCpf(c.cpf) : mascararCpf(c.cpf),
-      cidade: c.cidade || '',
-      uf: c.uf || '',
-      telefone: podeVerDadosPessoais ? c.telefone : mascararTelefone(c.telefone),
-      categoria: c.categoria || 'ABERTA',
-      foto_url: c.foto_url || null,
-      carteira_federacao: c.carteira_federacao || null,
-      ativo: c.ativo,
-      criado_em: c.criado_em,
-      atualizado_em: c.atualizado_em,
-    };
+    const competidor = podeVerDadosPessoais
+      ? {
+          id: c.id,
+          nome: c.nome,
+          apelido_pista: c.apelido_pista || '',
+          cpf: formatarCpf(c.cpf),
+          cidade: c.cidade || '',
+          uf: c.uf || '',
+          telefone: c.telefone || '',
+          categoria: c.categoria || 'ABERTA',
+          foto_url: c.foto_url || null,
+          carteira_federacao: c.carteira_federacao || null,
+          ativo: c.ativo,
+          criado_em: c.criado_em,
+          atualizado_em: c.atualizado_em,
+        }
+      : {
+          id: c.id,
+          nome: c.nome,
+          apelido_pista: c.apelido_pista || '',
+          categoria: c.categoria || 'ABERTA',
+          foto_url: c.foto_url || null,
+          ativo: c.ativo,
+        };
 
     return NextResponse.json({
       competidor,

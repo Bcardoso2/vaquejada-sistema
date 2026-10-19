@@ -37,18 +37,33 @@ export function isCookieSecure(): boolean {
 }
 
 /**
- * Extrai o IP do cliente de forma confiável considerando headers de proxy
+ * Extrai o IP do cliente de forma confiável.
+ * IMPORTANTE: Headers de proxy (X-Forwarded-For, X-Real-IP) são tratados APENAS
+ * se houver proxy confiável explicitamente habilitado (TRUST_PROXY=true).
+ * Sem proxy configurado, usa-se o IP da conexão direta para evitar spoofing de cabeçalhos.
  */
 export function extrairIpCliente(request?: NextRequest | Request): string {
   if (!request) return '127.0.0.1';
-  const forwarded = request.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
+
+  const trustProxy = process.env.TRUST_PROXY === 'true';
+
+  if (trustProxy) {
+    const forwarded = request.headers.get('x-forwarded-for');
+    if (forwarded) {
+      const clientIp = forwarded.split(',')[0].trim();
+      if (clientIp) return clientIp;
+    }
+    const realIp = request.headers.get('x-real-ip');
+    if (realIp) {
+      return realIp.trim();
+    }
   }
-  const realIp = request.headers.get('x-real-ip');
-  if (realIp) {
-    return realIp.trim();
+
+  // Tenta obter o IP do socket direto no NextRequest
+  if ('ip' in request && (request as { ip?: string }).ip) {
+    return (request as { ip?: string }).ip!;
   }
+
   return '127.0.0.1';
 }
 
@@ -161,7 +176,6 @@ export async function obterSessaoDoRequest(request?: NextRequest | Request): Pro
     session.papel = res.rows[0].papel as UserRole;
   } catch (err) {
     console.error('Falha ao verificar status do usuário no banco:', err);
-    // Em caso de falha de comunicação com o banco, não arrisca conceder acesso
     return null;
   }
 
@@ -169,18 +183,42 @@ export async function obterSessaoDoRequest(request?: NextRequest | Request): Pro
 }
 
 /**
- * Controle de tentativas de login refinado por Usuário E por IP
- * Garante que um atacante em outro IP NÃO consiga bloquear o acesso do usuário/ADMIN legítimo.
+ * Controle de tentativas de login:
+ * 1. Por par (usuário + IP): 5 falhas em 15 minutos bloqueiam o par usuário+IP.
+ * 2. Adicionalmente por IP geral: 20 falhas em 15 minutos bloqueiam o IP inteiro.
  */
 export async function verificarTentativasLogin(
   email: string,
   ip: string
-): Promise<{ permitido: boolean; tempoRestanteSegundos?: number }> {
+): Promise<{ permitido: boolean; tempoRestanteSegundos?: number; motivo?: string }> {
   const emailLimpo = email.toLowerCase().trim();
   const ipLimpo = ip.trim();
 
   try {
-    // 1. Verificar se este IP específico está bloqueado para este email
+    const agora = new Date();
+
+    // 1. Verificar se o IP geral está bloqueado por excesso de falhas (>= 20 falhas em 15 min)
+    const resIpGeral = await query(
+      `SELECT SUM(tentativas) as total_erros, MAX(bloqueado_ate) as max_bloqueio
+       FROM login_tentativas_v2 
+       WHERE ip = $1 AND ultimo_erro > CURRENT_TIMESTAMP - INTERVAL '15 minutes'`,
+      [ipLimpo]
+    );
+
+    const totalErrosIp = parseInt(resIpGeral.rows[0]?.total_erros || '0', 10);
+    const maxBloqueioIp = resIpGeral.rows[0]?.max_bloqueio;
+
+    if (totalErrosIp >= 20 || (maxBloqueioIp && agora < new Date(maxBloqueioIp))) {
+      const bloqueio = maxBloqueioIp ? new Date(maxBloqueioIp) : new Date(agora.getTime() + 900000);
+      const restante = Math.max(1, Math.ceil((bloqueio.getTime() - agora.getTime()) / 1000));
+      return { 
+        permitido: false, 
+        tempoRestanteSegundos: restante, 
+        motivo: 'IP_BLOQUEADO' 
+      };
+    }
+
+    // 2. Verificar se este par (email, IP) específico está bloqueado (>= 5 falhas)
     const res = await query(
       `SELECT tentativas, bloqueado_ate 
        FROM login_tentativas_v2 
@@ -191,25 +229,16 @@ export async function verificarTentativasLogin(
     if (res.rowCount && res.rowCount > 0) {
       const { bloqueado_ate } = res.rows[0];
       if (bloqueado_ate) {
-        const agora = new Date();
         const bloqueio = new Date(bloqueado_ate);
         if (agora < bloqueio) {
           const restante = Math.ceil((bloqueio.getTime() - agora.getTime()) / 1000);
-          return { permitido: false, tempoRestanteSegundos: restante };
+          return { 
+            permitido: false, 
+            tempoRestanteSegundos: restante,
+            motivo: 'CONTA_IP_BLOQUEADO'
+          };
         }
       }
-    }
-
-    // 2. Verificar se este IP no geral está tentando brute-force contra muitas contas (limite: 20 erros em 15m)
-    const resIpGeral = await query(
-      `SELECT COUNT(*) as total_erros 
-       FROM login_tentativas_v2 
-       WHERE ip = $1 AND ultimo_erro > CURRENT_TIMESTAMP - INTERVAL '15 minutes'`,
-      [ipLimpo]
-    );
-
-    if (resIpGeral.rowCount && parseInt(resIpGeral.rows[0]?.total_erros || '0', 10) >= 20) {
-      return { permitido: false, tempoRestanteSegundos: 900 };
     }
 
     return { permitido: true };
@@ -220,6 +249,7 @@ export async function verificarTentativasLogin(
 
 /**
  * Registra falha de senha para a combinação (email, IP)
+ * Bloqueia o par (email, IP) com 5 falhas, e bloqueia o IP inteiro com 20 falhas
  */
 export async function registrarFalhaLogin(email: string, ip: string): Promise<void> {
   const emailLimpo = email.toLowerCase().trim();
@@ -237,14 +267,30 @@ export async function registrarFalhaLogin(email: string, ip: string): Promise<vo
       [emailLimpo, ipLimpo]
     );
 
-    const tentativas = res.rows[0]?.tentativas || 1;
-    // Se atingir 5 tentativas incorretas deste IP para esta conta, bloqueia apenas este IP para esta conta por 15 minutos
-    if (tentativas >= 5) {
+    const tentativasConta = res.rows[0]?.tentativas || 1;
+    if (tentativasConta >= 5) {
       await query(
         `UPDATE login_tentativas_v2 
          SET bloqueado_ate = CURRENT_TIMESTAMP + INTERVAL '15 minutes'
          WHERE email = $1 AND ip = $2`,
         [emailLimpo, ipLimpo]
+      );
+    }
+
+    // Verificar se a soma de erros do IP atingiu o limite de 20 falhas
+    const resTotal = await query(
+      `SELECT SUM(tentativas) as total 
+       FROM login_tentativas_v2 
+       WHERE ip = $1 AND ultimo_erro > CURRENT_TIMESTAMP - INTERVAL '15 minutes'`,
+      [ipLimpo]
+    );
+    const totalGeralIp = parseInt(resTotal.rows[0]?.total || '0', 10);
+    if (totalGeralIp >= 20) {
+      await query(
+        `UPDATE login_tentativas_v2 
+         SET bloqueado_ate = CURRENT_TIMESTAMP + INTERVAL '15 minutes'
+         WHERE ip = $1`,
+        [ipLimpo]
       );
     }
   } catch (err) {
@@ -253,7 +299,7 @@ export async function registrarFalhaLogin(email: string, ip: string): Promise<vo
 }
 
 /**
- * Limpa tentativas após login bem-sucedido
+ * Limpa tentativas após login bem-sucedido para este usuário e IP
  */
 export async function limparTentativasLogin(email: string, ip: string): Promise<void> {
   try {
@@ -267,13 +313,13 @@ export async function limparTentativasLogin(email: string, ip: string): Promise<
 }
 
 /**
- * Desbloqueia todas as tentativas/bloqueios de um usuário (para uso do ADMIN)
+ * Desbloqueia todas as tentativas/bloqueios de um usuário ou IP (para uso do ADMIN)
  */
-export async function desbloquearUsuario(email: string): Promise<void> {
-  const emailLimpo = email.toLowerCase().trim();
+export async function desbloquearUsuario(identificador: string): Promise<void> {
+  const limpo = identificador.toLowerCase().trim();
   try {
-    await query(`DELETE FROM login_tentativas_v2 WHERE email = $1`, [emailLimpo]);
-    await query(`DELETE FROM login_tentativas WHERE LOWER(ip_ou_email) = $1`, [emailLimpo]);
+    await query(`DELETE FROM login_tentativas_v2 WHERE email = $1 OR ip = $1`, [limpo]);
+    await query(`DELETE FROM login_tentativas WHERE LOWER(ip_ou_email) = $1`, [limpo]);
   } catch (err) {
     console.error('Erro ao desbloquear usuário:', err);
     throw err;

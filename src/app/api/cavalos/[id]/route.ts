@@ -20,7 +20,17 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Cavalo não encontrado' }, { status: 404 });
     }
 
-    const cavalo = cavRes.rows[0];
+    const cavaloRaw = cavRes.rows[0];
+    const podeVerDadosCompletos = auth.session.papel === 'ADMIN' || auth.session.papel === 'SECRETARIA';
+
+    const cavalo = podeVerDadosCompletos
+      ? cavaloRaw
+      : {
+          id: cavaloRaw.id,
+          nome: cavaloRaw.nome,
+          tipo: cavaloRaw.tipo,
+          ativo: cavaloRaw.ativo,
+        };
 
     // Buscar histórico de senhas em que atuou
     const senhasRes = await query(

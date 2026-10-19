@@ -37,6 +37,18 @@ export async function GET(request: NextRequest) {
     sql += ` ORDER BY nome ASC LIMIT 200`;
 
     const res = await query(sql, params);
+    const podeVerDadosCompletos = auth.session.papel === 'ADMIN' || auth.session.papel === 'SECRETARIA';
+
+    if (!podeVerDadosCompletos) {
+      const listaMinima = res.rows.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        tipo: c.tipo,
+        ativo: c.ativo,
+      }));
+      return NextResponse.json(listaMinima);
+    }
+
     return NextResponse.json(res.rows);
   } catch (error) {
     console.error('Erro ao listar cavalos:', error);

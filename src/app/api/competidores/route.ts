@@ -54,15 +54,28 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Processar campos sensíveis
+    // Para Operador de Pista e Juiz: retornar APENAS campos mínimos de pista, sem dados pessoais
+    if (!podeVerDadosPessoais) {
+      const listaMinima = res.rows.map((c) => ({
+        id: c.id,
+        nome: c.nome,
+        apelido_pista: c.apelido_pista || '',
+        categoria: c.categoria || 'ABERTA',
+        foto_url: c.foto_url || null,
+        ativo: c.ativo,
+      }));
+      return NextResponse.json(listaMinima);
+    }
+
+    // Para ADMIN e SECRETARIA: retornar ficha completa
     const lista = res.rows.map((c) => ({
       id: c.id,
       nome: c.nome,
       apelido_pista: c.apelido_pista || '',
-      cpf: podeVerDadosPessoais ? formatarCpf(c.cpf) : mascararCpf(c.cpf),
+      cpf: formatarCpf(c.cpf),
       cidade: c.cidade || '',
       uf: c.uf || '',
-      telefone: podeVerDadosPessoais ? c.telefone : mascararTelefone(c.telefone),
+      telefone: c.telefone || '',
       categoria: c.categoria || 'ABERTA',
       foto_url: c.foto_url || null,
       carteira_federacao: c.carteira_federacao || null,

@@ -8,3 +8,5 @@ brag-output/
 .env*
 .DS_Store
 *.tsbuildinfo
+backups/
+*.dump
