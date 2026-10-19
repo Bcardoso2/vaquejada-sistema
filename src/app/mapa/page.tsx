@@ -476,6 +476,19 @@ export default function MapaPistaPage() {
             ⚙️ Gerar Baterias
           </button>
 
+          {/* Botão Súmula Oficial em PDF */}
+          {bateriaSelecionada !== 'TODAS' && (
+            <a
+              href={`/api/relatorios/bateria/${bateriaSelecionada}?formato=pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[48px] px-4 bg-purple-700 hover:bg-purple-800 text-white font-bold text-sm rounded-xl transition shadow flex items-center gap-2"
+              title="Abrir súmula oficial da bateria em PDF para impressão"
+            >
+              📄 Súmula PDF
+            </a>
+          )}
+
           {/* Botão Imprimir Folha de Largada */}
           <button
             onClick={imprimirOrdemLargada}

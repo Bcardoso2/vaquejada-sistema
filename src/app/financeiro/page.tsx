@@ -150,7 +150,41 @@ export default function FinanceiroPage() {
             Conciliação de recebimentos, saídas por estorno e fluxo de caixa consolidado
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Botões de Exportação da Parte 2 */}
+          <a
+            href="/api/relatorios/fechamento-caixa?formato=pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar fechamento contábil oficial em PDF"
+          >
+            <span>📄</span>
+            <span>Fechamento PDF</span>
+          </a>
+
+          <a
+            href="/api/relatorios/fechamento-caixa?formato=excel"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar planilha de fechamento para Microsoft Excel"
+          >
+            <span>📗</span>
+            <span>Fechamento Excel</span>
+          </a>
+
+          <a
+            href="/api/relatorios/resultados?formato=pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar relatório de resultados por categoria e bateria"
+          >
+            <span>📊</span>
+            <span>Resultados PDF</span>
+          </a>
+
           <button
             onClick={() => carregarDados()}
             className="px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium transition"
@@ -369,6 +403,7 @@ export default function FinanceiroPage() {
                   <th className="py-3 px-4">Canal</th>
                   <th className="py-3 px-4">Valor</th>
                   <th className="py-3 px-4">Situação Comercial</th>
+                  <th className="py-3 px-4 text-center">Comprovante</th>
                   <th className="py-3 px-4 text-right">Data</th>
                 </tr>
               </thead>
@@ -398,6 +433,18 @@ export default function FinanceiroPage() {
                       >
                         {s.estado_comercial}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <a
+                        href={`/comprovante/${s.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded text-[11px] border border-slate-300 transition inline-flex items-center gap-1"
+                        title="Imprimir comprovante em impressora térmica 58/80mm"
+                      >
+                        <span>🖨️</span>
+                        <span>Térmico</span>
+                      </a>
                     </td>
                     <td className="py-3 px-4 text-right text-slate-400">
                       {new Date(s.criado_em).toLocaleDateString('pt-BR')}

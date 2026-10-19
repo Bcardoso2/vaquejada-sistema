@@ -7,7 +7,7 @@ import crypto from 'crypto';
 const uuidv4 = () => crypto.randomUUID();
 
 export async function GET(request: Request) {
-  const auth = await exigirSessao(request, ['SECRETARIA']);
+  const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA']);
   if (!auth.autorizado) return auth.response;
 
   try {
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
 
 // POST /api/financeiro - Registrar pagamento manual, baixa ou estorno
 export async function POST(request: Request) {
-  const auth = await exigirSessao(request, ['SECRETARIA']);
+  const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA']);
   if (!auth.autorizado) return auth.response;
 
   try {

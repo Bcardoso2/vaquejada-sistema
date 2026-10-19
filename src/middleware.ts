@@ -38,6 +38,7 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
   '/mapa': ['ADMIN', 'OPERADOR_PISTA'],
   '/juiz': ['ADMIN', 'JUIZ'],
   '/resultados': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'],
+  '/comprovante': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA'],
 };
 
 // Matriz de permissões para APIs
@@ -52,7 +53,7 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/oportunidades', roles: ['ADMIN'] },
   { prefixo: '/api/kits', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/secretaria', roles: ['ADMIN', 'SECRETARIA'] },
-  { prefixo: '/api/senhas', roles: ['ADMIN', 'SECRETARIA'] },
+  { prefixo: '/api/senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA'] },
   { prefixo: '/api/financeiro', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/mapa', roles: ['ADMIN', 'OPERADOR_PISTA'] },
   { prefixo: '/api/corridas', roles: ['ADMIN', 'OPERADOR_PISTA'] },
@@ -61,6 +62,10 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/resultados-senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/resultados', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/baterias', roles: ['ADMIN', 'OPERADOR_PISTA', 'SECRETARIA', 'JUIZ'] },
+  { prefixo: '/api/cancela', roles: ['ADMIN', 'OPERADOR_PISTA', 'SECRETARIA', 'JUIZ'] },
+  { prefixo: '/api/relatorios/bateria', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA'] },
+  { prefixo: '/api/relatorios/resultados', roles: ['ADMIN', 'SECRETARIA'] },
+  { prefixo: '/api/relatorios/fechamento-caixa', roles: ['ADMIN', 'SECRETARIA'] },
 ];
 
 export async function middleware(request: NextRequest) {
