@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 import { SenhaMap } from '@/components/SenhaMap';
+import { SeletorKits } from '@/components/SeletorKits';
+import type { KitMontado } from '@/app/api/secretaria/kits/route';
 import { validarCpf } from '@/lib/cpf';
 
 
@@ -130,6 +132,8 @@ export default function SecretariaPage() {
 
   // Venda de senhas (agora trabalha com kits e cadastros oficiais)
   const [senhaCodigo, setSenhaCodigo] = useState(''); // Código da senha baixa do kit selecionado
+  const [codigoAlta, setCodigoAlta] = useState(''); // Código da senha alta correspondente
+  const [kitSelecionado, setKitSelecionado] = useState<KitMontado | null>(null);
   const [cavaloNome, setCavaloNome] = useState('');
   const [cavaloId, setCavaloId] = useState<string | null>(null);
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('PIX');
@@ -315,6 +319,8 @@ export default function SecretariaPage() {
 
   const limparFormularioVenda = () => {
     setSenhaCodigo('');
+    setCodigoAlta('');
+    setKitSelecionado(null);
     setPuxadorNome('');
     setPuxadorId(null);
     setEsteiraNome('');
@@ -327,7 +333,7 @@ export default function SecretariaPage() {
     e.preventDefault();
 
     if (!senhaCodigo) {
-      mostrarToast('erro', 'Selecione uma senha no mapa.');
+      mostrarToast('erro', 'Selecione um kit de senhas para a venda.');
       return;
     }
     if (!puxadorNome.trim() || !esteiraNome.trim() || !cavaloNome.trim()) {
@@ -345,7 +351,11 @@ export default function SecretariaPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          senhaCodigo,
+          vaquejadaId: 'vq-2026-portal',
+          codigo: senhaCodigo,
+          senhaCodigo: senhaCodigo,
+          codigoAlta: codigoAlta || codigoAltaDaSenhaSelecionada,
+          senhaAltaCodigo: codigoAlta || codigoAltaDaSenhaSelecionada,
           cavaloNome: cavaloNome.trim(),
           cavaloPuxaId: cavaloId,
           formaPagamento,
@@ -362,7 +372,7 @@ export default function SecretariaPage() {
       if (res.ok) {
         setRetornoVenda(data);
         limparFormularioVenda();
-        mostrarToast('sucesso', 'Venda emitida com sucesso.');
+        mostrarToast('sucesso', 'Venda do kit emitida com sucesso!');
       } else {
         mostrarToast('erro', data.error || 'Erro ao realizar venda');
       }
@@ -543,39 +553,98 @@ export default function SecretariaPage() {
             </h2>
 
             <form onSubmit={handleEmitirVenda} className="space-y-5">
-              {/* 1. Senha: o mapa abre em painel próprio, o formulário fica limpo */}
+              {/* 1. Seleção do Kit de Senhas (Baixa + Alta) */}
               <div>
-                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">1. Senha</h3>
-                <div
-                  className={`flex items-center justify-between gap-3 rounded-xl border-2 p-4 ${
-                    senhaCodigo ? 'border-slate-900 bg-slate-50' : 'border-dashed border-slate-300'
-                  }`}
-                >
-                  <div>
-                    {senhaCodigo ? (
-                      <>
-                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Kit selecionado
-                        </div>
-                        <div className="text-3xl font-mono font-black text-slate-900 leading-tight">
-                          {senhaCodigo} - {codigoAltaDaSenhaSelecionada}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-sm font-bold text-slate-800">Nenhum kit selecionado</div>
-                        <div className="text-xs text-slate-500">Abra o mapa e escolha um kit disponível.</div>
-                      </>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setMapaAberto(true)}
-                    className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-lg cursor-pointer shadow-sm whitespace-nowrap"
-                  >
-                    {senhaCodigo ? 'Trocar kit' : 'Escolher no mapa'}
-                  </button>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    1. Kit de Senhas (1 Baixa + 1 Alta)
+                  </h3>
+                  <span className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    4 Bois Alocados no Kit
+                  </span>
                 </div>
+
+                {senhaCodigo ? (
+                  <div className="rounded-xl border-2 border-emerald-500/80 bg-emerald-50/40 p-4 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="font-bold text-slate-900 text-sm">
+                          {kitSelecionado?.codigo || `Kit #${senhaCodigo}`} Selecionado
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMapaAberto(true)}
+                        className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold rounded-lg border border-slate-300 shadow-xs cursor-pointer transition"
+                      >
+                        Trocar Kit
+                      </button>
+                    </div>
+
+                    {/* Caixas lado a lado com as 2 senhas claramente pareadas */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Senha Baixa */}
+                      <div className="bg-white rounded-xl p-3.5 border-2 border-emerald-400/80 shadow-xs text-center space-y-1">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span className="text-[11px] font-black uppercase text-emerald-700 tracking-wider">
+                            1ª Rodada (Baixa)
+                          </span>
+                        </div>
+                        <div className="text-3xl font-mono font-black text-slate-900 leading-none py-1">
+                          {senhaCodigo}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-medium">
+                          2 bois alocados na pista
+                        </div>
+                      </div>
+
+                      {/* Senha Alta */}
+                      <div className="bg-white rounded-xl p-3.5 border-2 border-indigo-400/80 shadow-xs text-center space-y-1">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                          <span className="text-[11px] font-black uppercase text-indigo-700 tracking-wider">
+                            2ª Rodada (Alta)
+                          </span>
+                        </div>
+                        <div className="text-3xl font-mono font-black text-slate-900 leading-none py-1">
+                          {codigoAlta || codigoAltaDaSenhaSelecionada}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-medium">
+                          2 bois alocados na pista
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-600 pt-1">
+                      <span>Inscrição completa: <strong>2 Corridas Independentes</strong> (Tarde e Noite)</span>
+                      <button
+                        type="button"
+                        onClick={limparFormularioVenda}
+                        className="text-slate-400 hover:text-rose-600 text-xs transition cursor-pointer"
+                      >
+                        Limpar seleção
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-5 text-center space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-sm font-bold text-slate-800">Nenhum kit selecionado</div>
+                      <div className="text-xs text-slate-500">
+                        Selecione um kit para alocar o par de senhas (1 baixa + 1 alta) e os 4 bois.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMapaAberto(true)}
+                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-lg cursor-pointer shadow-sm inline-flex items-center gap-2 transition hover:scale-[1.02]"
+                    >
+                      <span>🗂️</span> Escolher Kit (Baixa + Alta)
+                    </button>
+                  </div>
+                )}
               </div>
 
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider -mb-2 pt-2 border-t border-slate-100 flex items-center justify-between">
@@ -759,39 +828,30 @@ export default function SecretariaPage() {
               <button
                 type="submit"
                 disabled={enviandoVenda || !senhaCodigo}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition text-sm shadow-sm cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed"
+                className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition text-sm shadow-md cursor-pointer disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {enviandoVenda
                   ? 'Processando venda...'
                   : senhaCodigo
-                  ? `Confirmar venda do kit ${senhaCodigo}-${codigoAltaDaSenhaSelecionada} — ${valorVendaValido ? brl.format(valorVendaNumero * 2) : '—'}`
+                  ? `Confirmar Venda do Kit (${senhaCodigo} + ${codigoAlta || codigoAltaDaSenhaSelecionada}) — ${valorVendaValido ? brl.format(valorVendaNumero) : '—'}`
                   : 'Selecione um kit para continuar'}
               </button>
             </form>
 
-            {/* Senha Map Modal */}
-            {mapaAberto && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-                  <div className="flex justify-between items-start">
-                    <h3 className="text-lg font-bold text-slate-900">Selecionar Kit</h3>
-                    <button
-                      onClick={() => setMapaAberto(false)}
-                      className="text-gray-500 hover:text-gray-700"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <SenhaMap
-                    onSenhaSelect={setSenhaCodigo}
-                    selectedSenha={senhaCodigo ?? null}
-                    vaquejadaId="vq-2026-portal"
-                    faixaBaixa={[1, 200]}
-                    faixaAlta={[800, 999]}
-                  />
-                </div>
-              </div>
-            )}
+            {/* Modal Novo do Seletor de Kits (Cards Pareados + Grade Dupla Lado a Lado) */}
+            <SeletorKits
+              aberto={mapaAberto}
+              onFechar={() => setMapaAberto(false)}
+              onSelectKit={(kit) => {
+                setKitSelecionado(kit);
+                setSenhaCodigo(kit.senhaBaixa.codigo);
+                setCodigoAlta(kit.senhaAlta.codigo);
+                if (kit.categoria) setCategoria(kit.categoria);
+                if (kit.valorCentavos) setValorVenda(String(kit.valorCentavos / 100));
+              }}
+              kitSelecionadoId={kitSelecionado?.id || senhaCodigo}
+              vaquejadaId="vq-2026-portal"
+            />
           </div>
 
           {/* Painel lateral */}

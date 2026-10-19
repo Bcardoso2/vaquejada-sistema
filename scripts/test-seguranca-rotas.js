@@ -42,6 +42,7 @@ const MATRIZ_ROTAS = {
   '/api/auth/logout': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/api/auth/me': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/api/secretaria/vendas': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
+  '/api/secretaria/kits': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
   '/api/secretaria/boi-ouro': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
   '/api/senhas': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
   '/api/financeiro': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },

@@ -243,6 +243,33 @@ export async function POST(request: Request) {
       }
     }
 
+    // Suporte a pareamento híbrido: se o kit não tiver as duas senhas no mesmo kit_id, busca a alta informada
+    const codigoAltaInformado = String(body.codigoAlta || body.senhaAltaCodigo || '').trim();
+    if (codigoAltaInformado && senhasDoProcesso.length === 1) {
+      const codAltaPad = /^\d+$/.test(codigoAltaInformado) ? codigoAltaInformado.padStart(3, '0') : codigoAltaInformado;
+      const resAlta = await client.query(
+        `SELECT s.*, k.codigo as kit_codigo
+         FROM senhas s
+         LEFT JOIN kits k ON k.id = s.kit_id
+         WHERE (s.vaquejada_id = $1 OR s.vaquejada_id IS NULL)
+           AND (s.codigo = $2 OR s.codigo = $3)
+         FOR UPDATE OF s`,
+        [vaquejadaId, codigoAltaInformado, codAltaPad]
+      );
+
+      if (resAlta.rowCount && resAlta.rowCount > 0) {
+        const sAlta = resAlta.rows[0];
+        if (['PAGA', 'VENDIDA', 'UTILIZADA', 'CANCELADA'].includes(sAlta.estado_comercial)) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: `A senha alta (${sAlta.codigo}) já está ocupada ou cancelada. O kit não pode ser vendido.` },
+            { status: 409 }
+          );
+        }
+        senhasDoProcesso.push(sAlta);
+      }
+    }
+
     // 4. Buscar bois suficientes para todas as senhas (2 bois por senha)
     const boisNecessarios = senhasDoProcesso.length * 2;
     const boisRes = await client.query(
