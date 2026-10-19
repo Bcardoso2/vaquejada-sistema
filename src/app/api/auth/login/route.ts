@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Buscar usuário no banco
     const userRes = await query(
-      `SELECT id, nome, email, senha_hash, papel, ativo 
+      `SELECT id, nome, email, senha_hash, papel, ativo, deve_trocar_senha 
        FROM usuarios 
        WHERE LOWER(email) = $1`,
       [emailLimpo]
@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       nome: usuario.nome,
       email: usuario.email,
       papel: usuario.papel as UserRole,
+      deveTrocarSenha: !!usuario.deve_trocar_senha,
     });
 
     // 6. Registrar Auditoria do Login
@@ -95,18 +96,20 @@ export async function POST(request: NextRequest) {
       acao: 'LOGIN_SUCESSO',
       entidade: 'usuarios',
       entidadeId: usuario.id,
-      detalhes: { email: usuario.email, papel: usuario.papel, ip },
+      detalhes: { email: usuario.email, papel: usuario.papel, ip, deveTrocarSenha: !!usuario.deve_trocar_senha },
       motivo: 'Acesso autenticado ao sistema',
     });
 
     // 7. Retornar resposta com Cookie httpOnly + secure (configurável) + sameSite
     const response = NextResponse.json({
       success: true,
+      deveTrocarSenha: !!usuario.deve_trocar_senha,
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
         papel: usuario.papel,
+        deveTrocarSenha: !!usuario.deve_trocar_senha,
       },
     });
 

@@ -11,6 +11,7 @@ export interface UserSession {
   nome: string;
   email: string;
   papel: UserRole;
+  deveTrocarSenha?: boolean;
 }
 
 // O segredo do JWT DEVE vir obrigatoriamente de variável de ambiente, sem fallback fixo no código
@@ -90,6 +91,7 @@ export async function criarTokenSessao(usuario: UserSession): Promise<string> {
     nome: usuario.nome,
     email: usuario.email,
     papel: usuario.papel,
+    deveTrocarSenha: !!usuario.deveTrocarSenha,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
@@ -111,6 +113,7 @@ export async function verificarTokenSessao(token: string): Promise<UserSession |
       nome: (payload.nome as string) || 'Usuário',
       email: (payload.email as string) || '',
       papel: payload.papel as UserRole,
+      deveTrocarSenha: !!payload.deveTrocarSenha,
     };
   } catch {
     return null;
@@ -123,6 +126,7 @@ export async function verificarTokenSessao(token: string): Promise<UserSession |
  * SEMPRE consulta o banco de dados em tempo real:
  * - Se o usuário for desativado (ativo = false), a sessão é invalidada imediatamente.
  * - Se o perfil do usuário for alterado, o novo perfil entra em vigor imediatamente.
+ * - Atualiza a flag deveTrocarSenha com o estado do banco de dados.
  */
 export async function obterSessaoDoRequest(request?: NextRequest | Request): Promise<UserSession | null> {
   let token: string | undefined;
@@ -167,13 +171,14 @@ export async function obterSessaoDoRequest(request?: NextRequest | Request): Pro
 
   // Validar se o usuário ainda existe e está ativo no banco a cada requisição
   try {
-    const res = await query('SELECT id, papel, ativo FROM usuarios WHERE id = $1', [session.id]);
+    const res = await query('SELECT id, papel, ativo, deve_trocar_senha FROM usuarios WHERE id = $1', [session.id]);
     if (res.rowCount === 0 || !res.rows[0].ativo) {
       // Usuário excluído ou desativado: perde o acesso imediatamente
       return null;
     }
-    // Garante que o perfil do usuário é o papel atual do banco
+    // Garante que o perfil e flag do usuário são os atuais do banco
     session.papel = res.rows[0].papel as UserRole;
+    session.deveTrocarSenha = !!res.rows[0].deve_trocar_senha;
   } catch (err) {
     console.error('Falha ao verificar status do usuário no banco:', err);
     return null;

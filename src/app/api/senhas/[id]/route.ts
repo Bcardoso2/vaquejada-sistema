@@ -10,7 +10,7 @@ interface RouteContext {
 // GET /api/senhas/[id] - Obter dados completos de uma senha para exibição e comprovante térmico
 // ZERO CPF completo
 export async function GET(request: NextRequest, context: RouteContext) {
-  const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA']);
+  const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA']);
   if (!auth.autorizado) return auth.response;
 
   try {

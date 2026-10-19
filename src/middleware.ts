@@ -38,7 +38,7 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
   '/mapa': ['ADMIN', 'OPERADOR_PISTA'],
   '/juiz': ['ADMIN', 'JUIZ'],
   '/resultados': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'],
-  '/comprovante': ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA'],
+  '/comprovante': ['ADMIN', 'SECRETARIA'],
 };
 
 // Matriz de permissões para APIs
@@ -53,7 +53,7 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/oportunidades', roles: ['ADMIN'] },
   { prefixo: '/api/kits', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/secretaria', roles: ['ADMIN', 'SECRETARIA'] },
-  { prefixo: '/api/senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA'] },
+  { prefixo: '/api/senhas', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/financeiro', roles: ['ADMIN', 'SECRETARIA'] },
   { prefixo: '/api/mapa', roles: ['ADMIN', 'OPERADOR_PISTA'] },
   { prefixo: '/api/corridas', roles: ['ADMIN', 'OPERADOR_PISTA'] },
