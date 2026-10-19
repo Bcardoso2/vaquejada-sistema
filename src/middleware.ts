@@ -2,13 +2,22 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
-  throw new Error(
-    'CONFIGURAÇÃO FATAL DE SEGURANÇA: A variável de ambiente JWT_SECRET não está definida. O servidor não pode iniciar sem JWT_SECRET.'
-  );
+function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    if (
+      process.env.NEXT_PHASE === 'phase-production-build' ||
+      process.env.NODE_ENV === 'test' ||
+      (typeof window === 'undefined' && process.env.npm_lifecycle_event === 'build')
+    ) {
+      return new TextEncoder().encode('temporary-build-token-not-used-in-production-runtime');
+    }
+    throw new Error(
+      'CONFIGURAÇÃO FATAL DE SEGURANÇA: A variável de ambiente JWT_SECRET não está definida. O servidor não pode iniciar sem JWT_SECRET.'
+    );
+  }
+  return new TextEncoder().encode(secret);
 }
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 const COOKIE_NAME = 'vaquejada_session';
 
@@ -101,7 +110,7 @@ export async function middleware(request: NextRequest) {
 
   if (token) {
     try {
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, getJwtSecret());
       if (payload.id && payload.papel) {
         session = {
           id: payload.id as string,

@@ -14,14 +14,27 @@ export interface UserSession {
   deveTrocarSenha?: boolean;
 }
 
-// O segredo do JWT DEVE vir obrigatoriamente de variável de ambiente, sem fallback fixo no código
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
-  throw new Error(
-    'CONFIGURAÇÃO FATAL DE SEGURANÇA: A variável de ambiente JWT_SECRET não está definida. Defina uma chave secreta no arquivo .env.local para iniciar o servidor.'
-  );
+/**
+ * Obtém a chave criptográfica secreta codificada para assinar e validar JWT.
+ * Durante a fase de build ou coleta estática do Next.js, permite prosseguir sem crashar.
+ * No runtime ativo (servidor atendendo requisições), exige obrigatoriamente a variável JWT_SECRET.
+ */
+export function getJwtSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length === 0) {
+    if (
+      process.env.NEXT_PHASE === 'phase-production-build' ||
+      process.env.NODE_ENV === 'test' ||
+      (typeof window === 'undefined' && process.env.npm_lifecycle_event === 'build')
+    ) {
+      return new TextEncoder().encode('temporary-build-token-not-used-in-production-runtime');
+    }
+    throw new Error(
+      'CONFIGURAÇÃO FATAL DE SEGURANÇA: A variável de ambiente JWT_SECRET não está definida. Defina uma chave secreta no arquivo .env.local para iniciar o servidor.'
+    );
+  }
+  return new TextEncoder().encode(secret);
 }
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export const COOKIE_NAME = 'vaquejada_session';
 
@@ -96,7 +109,7 @@ export async function criarTokenSessao(usuario: UserSession): Promise<string> {
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('24h')
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 }
 
 /**
@@ -104,7 +117,7 @@ export async function criarTokenSessao(usuario: UserSession): Promise<string> {
  */
 export async function verificarTokenSessao(token: string): Promise<UserSession | null> {
   try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
+    const { payload } = await jwtVerify(token, getJwtSecret());
     if (!payload.id || !payload.papel) {
       return null;
     }
