@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { exigirSessao } from '@/lib/api-auth';
-import { validarCpf, formatarCpf, limparCpf, mascararCpf, mascararTelefone } from '@/lib/cpf';
+import { validarCpf, formatarCpf, limparCpf } from '@/lib/cpf';
+import {
+  criptografarCpf,
+  descriptografarCpf,
+  gerarBlindIndexCpf,
+} from '@/lib/cpf-crypto';
 import { registrarAuditoria } from '@/lib/audit';
 
-// GET /api/competidores - Listar competidores com busca e mascaramento por perfil
+// GET /api/competidores - Listar competidores com busca e proteção de CPF por perfil
 export async function GET(request: NextRequest) {
   const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ']);
   if (!auth.autorizado) return auth.response;
@@ -24,9 +29,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (busca.trim()) {
-      sql += ` AND (LOWER(nome) LIKE $${pIdx} OR LOWER(COALESCE(apelido_pista, '')) LIKE $${pIdx} OR regexp_replace(cpf, '[^0-9]', '', 'g') LIKE $${pIdx})`;
-      params.push(`%${busca.toLowerCase().trim()}%`);
-      pIdx++;
+      const termoLimpo = limparCpf(busca);
+      // Se for busca por CPF com 11 dígitos, busca rápida por Blind Index
+      if (termoLimpo.length === 11) {
+        const blindIndex = gerarBlindIndexCpf(termoLimpo);
+        sql += ` AND (cpf_blind_index = $${pIdx} OR LOWER(nome) LIKE $${pIdx + 1})`;
+        params.push(blindIndex);
+        params.push(`%${busca.toLowerCase().trim()}%`);
+        pIdx += 2;
+      } else {
+        sql += ` AND (LOWER(nome) LIKE $${pIdx} OR LOWER(COALESCE(apelido_pista, '')) LIKE $${pIdx})`;
+        params.push(`%${busca.toLowerCase().trim()}%`);
+        pIdx++;
+      }
     }
 
     if (categoria.trim()) {
@@ -67,12 +82,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(listaMinima);
     }
 
-    // Para ADMIN e SECRETARIA: retornar ficha completa
+    // Para ADMIN e SECRETARIA: retornar ficha completa com CPF descriptografado em tempo de execução
     const lista = res.rows.map((c) => ({
       id: c.id,
       nome: c.nome,
       apelido_pista: c.apelido_pista || '',
-      cpf: formatarCpf(c.cpf),
+      cpf: descriptografarCpf(c.cpf_encrypted || c.cpf),
       cidade: c.cidade || '',
       uf: c.uf || '',
       telefone: c.telefone || '',
@@ -91,7 +106,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/competidores - Cadastrar novo competidor (validação de CPF único)
+// POST /api/competidores - Cadastrar novo competidor (criptografia AES-256-GCM + Blind Index)
 export async function POST(request: NextRequest) {
   const auth = await exigirSessao(request, ['ADMIN', 'SECRETARIA']);
   if (!auth.autorizado) return auth.response;
@@ -122,13 +137,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const cpfLimpo = limparCpf(cpf);
+    // Criptografa o CPF com AES-256-GCM e gera Blind Index HMAC-SHA256
+    const { encrypted: cpfEncrypted, blindIndex: cpfBlindIndex } = criptografarCpf(cpf);
     const cpfFormatado = formatarCpf(cpf);
 
-    // Verificar unicidade de CPF
+    // Verificar unicidade de CPF via Blind Index O(1)
     const existeCpf = await query(
-      `SELECT id, nome FROM competidores WHERE regexp_replace(cpf, '[^0-9]', '', 'g') = $1`,
-      [cpfLimpo]
+      `SELECT id, nome FROM competidores WHERE cpf_blind_index = $1`,
+      [cpfBlindIndex]
     );
 
     if (existeCpf.rowCount && existeCpf.rowCount > 0) {
@@ -142,15 +158,17 @@ export async function POST(request: NextRequest) {
 
     const insertRes = await query(
       `INSERT INTO competidores (
-        id, nome, apelido_pista, cpf, cidade, uf, telefone, 
+        id, nome, apelido_pista, cpf, cpf_encrypted, cpf_blind_index, cidade, uf, telefone, 
         categoria, foto_url, carteira_federacao, ativo
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *`,
       [
         id,
         nome.trim(),
         apelido_pista?.trim() || null,
-        cpfFormatado,
+        cpfEncrypted, // Armazena a versão cifrada em repouso
+        cpfEncrypted,
+        cpfBlindIndex,
         cidade?.trim() || null,
         uf?.trim()?.toUpperCase() || null,
         telefone?.trim() || null,

@@ -1,10 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
-import { Button } from '../../components/Button';
-import { DataTable } from '../../components/DataTable';
-import { FormInput } from '../../components/FormInput';
 
 interface Boi {
   id: string;
@@ -21,15 +18,32 @@ interface Boi {
 export default function BoisPage() {
   const [bois, setBois] = useState<Boi[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
+
+  // Notificações Toast
+  const [toast, setToast] = useState<{ tipo: 'sucesso' | 'erro'; mensagem: string } | null>(null);
+  const exibirToast = (tipo: 'sucesso' | 'erro', mensagem: string) => {
+    setToast({ tipo, mensagem });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Modais
+  const [modalNovo, setModalNovo] = useState(false);
+  const [modalEditar, setModalEditar] = useState<{ aberto: boolean; boi: Boi | null }>({
+    aberto: false,
+    boi: null,
+  });
+  const [modalExcluir, setModalExcluir] = useState<Boi | null>(null);
+
+  // Form states
   const [formData, setFormData] = useState<Partial<Boi>>({
     numero_registro: '',
     nome: '',
-    categoria: '',
+    categoria: 'ABERTA',
     peso_kg: undefined,
     cor: '',
-    observacoes: ''
+    observacoes: '',
   });
 
   useEffect(() => {
@@ -40,245 +54,409 @@ export default function BoisPage() {
     setLoading(true);
     const response = await api.get<Boi[]>('/api/bois');
     if (response.error) {
-      setError(response.error);
+      exibirToast('erro', response.error);
     } else {
       setBois(response.data || []);
-      setError(null);
     }
     setLoading(false);
   };
 
-  const handleChange = (field: keyof Boi, value: string | number | undefined) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSalvar = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formData.numero_registro || !formData.nome) {
-      setError('Por favor, preencha todos os campos obrigatórios');
+      exibirToast('erro', 'Preencha o Número de Registro e o Nome do boi.');
       return;
     }
 
-    if (editing) {
-      // Update existing
-      const response = await api.put<Boi>(`/api/bois/${editing}`, formData as Boi);
-      if (response.error) {
-        setError(response.error);
+    if (modalEditar.aberto && modalEditar.boi) {
+      const res = await api.put<Boi>(`/api/bois/${modalEditar.boi.id}`, formData as Boi);
+      if (res.error) {
+        exibirToast('erro', res.error);
       } else {
-        setEditing(null);
-        setFormData({
-          numero_registro: '',
-          nome: '',
-          categoria: '',
-          peso_kg: undefined,
-          cor: '',
-          observacoes: ''
-        });
+        exibirToast('sucesso', 'Boi atualizado com sucesso!');
+        setModalEditar({ aberto: false, boi: null });
         await loadBois();
       }
     } else {
-      // Create new
-      const response = await api.post<Boi>('/api/bois', formData as Boi);
-      if (response.error) {
-        setError(response.error);
+      const res = await api.post<Boi>('/api/bois', formData as Boi);
+      if (res.error) {
+        exibirToast('erro', res.error);
       } else {
+        exibirToast('sucesso', 'Boi cadastrado com sucesso!');
+        setModalNovo(false);
         setFormData({
           numero_registro: '',
           nome: '',
-          categoria: '',
+          categoria: 'ABERTA',
           peso_kg: undefined,
           cor: '',
-          observacoes: ''
+          observacoes: '',
         });
         await loadBois();
       }
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este boi?')) return;
-
-    const response = await api.delete<void>(`/api/bois/${id}`);
-    if (response.error) {
-      setError(response.error);
+  const confirmarExclusao = async () => {
+    if (!modalExcluir) return;
+    const res = await api.delete<void>(`/api/bois/${modalExcluir.id}`);
+    if (res.error) {
+      exibirToast('erro', res.error);
     } else {
+      exibirToast('sucesso', `Boi #${modalExcluir.numero_registro} removido.`);
+      setModalExcluir(null);
       await loadBois();
     }
   };
 
-  const handleEdit = (boi: Boi) => {
-    setEditing(boi.id);
+  const abrirEdicao = (boi: Boi) => {
     setFormData({
       numero_registro: boi.numero_registro || '',
       nome: boi.nome || '',
-      categoria: boi.categoria || '',
+      categoria: boi.categoria || 'ABERTA',
       peso_kg: boi.peso_kg,
       cor: boi.cor || '',
-      observacoes: boi.observacoes || ''
+      observacoes: boi.observacoes || '',
     });
+    setModalEditar({ aberto: true, boi });
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
+  const boisFiltrados = useMemo(() => {
+    return bois.filter((b) => {
+      if (filtroCategoria && b.categoria !== filtroCategoria) return false;
+      if (busca.trim()) {
+        const termo = busca.toLowerCase();
+        return (
+          (b.nome || '').toLowerCase().includes(termo) ||
+          (b.numero_registro || '').toLowerCase().includes(termo) ||
+          (b.cor || '').toLowerCase().includes(termo)
+        );
+      }
+      return true;
+    });
+  }, [bois, busca, filtroCategoria]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 w-full max-w-xl">
-          <p className="font-bold">{error}</p>
-          <button onClick={() => setError(null)} className="ml-2 text-indigo-600 hover:text-indigo-800">
-            Tentar novamente
+  const categorias = useMemo(() => {
+    const setCat = new Set<string>();
+    bois.forEach((b) => {
+      if (b.categoria) setCat.add(b.categoria);
+    });
+    return Array.from(setCat);
+  }, [bois]);
+
+  return (
+    <div className="space-y-6">
+      {/* Toast Flutuante */}
+      {toast && (
+        <div
+          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200 ${
+            toast.tipo === 'sucesso'
+              ? 'bg-emerald-950 border-emerald-700 text-emerald-200'
+              : 'bg-rose-950 border-rose-700 text-rose-200'
+          }`}
+        >
+          <span>{toast.tipo === 'sucesso' ? '✅' : '❌'}</span>
+          <span>{toast.mensagem}</span>
+        </div>
+      )}
+
+      {/* Cabeçalho */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Plantel de Bois</h1>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+              {bois.length} animais cadastrados
+            </span>
+          </div>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Controle do lote da boiada, pesagem, numeração de registro e categorias de pista
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setFormData({
+                numero_registro: '',
+                nome: '',
+                categoria: 'ABERTA',
+                peso_kg: undefined,
+                cor: '',
+                observacoes: '',
+              });
+              setModalNovo(true);
+            }}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-sm transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>+</span>
+            <span>Novo Boi</span>
           </button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Gestão de Bois
-          </h1>
-          <Button
-            variant="primary"
-            onClick={() => setEditing(null)}
-          >
-            {editing ? 'Cancelar' : 'Novo Boi'}
-          </Button>
+      {/* Cards de Métricas */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total de Bois</span>
+          <div className="text-2xl font-black text-slate-900 mt-1">{bois.length}</div>
         </div>
-
-        {/* Form */}
-        <div className="bg-white shadow-sm rounded-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            {editing ? 'Editar Boi' : 'Novo Boi'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <FormInput
-              label="Número de Registro *"
-              placeholder="Ex: B001"
-              value={formData.numero_registro || ''}
-              onChange={(e) => handleChange('numero_registro', e.target.value)}
-              required
-              error={error && error.includes('registro') ? error : undefined}
-            />
-            <FormInput
-              label="Nome *"
-              placeholder="Nome do boi"
-              value={formData.nome || ''}
-              onChange={(e) => handleChange('nome', e.target.value)}
-              required
-              error={error && error.includes('nome') ? error : undefined}
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormInput
-                label="Categoria"
-                placeholder="Ex: NOVELHO, VAQUEADO"
-                value={formData.categoria || ''}
-                onChange={(e) => handleChange('categoria', e.target.value)}
-              />
-              <FormInput
-                label="Peso (kg)"
-                type="number"
-                min="0"
-                step="0.1"
-                value={formData.peso_kg !== undefined ? formData.peso_kg.toString() : ''}
-                onChange={(e) => {
-                  const num = parseFloat(e.target.value);
-                  handleChange('peso_kg', isNaN(num) ? undefined : num);
-                }}
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormInput
-                label="Cor"
-                placeholder="Cor do boi"
-                value={formData.cor || ''}
-                onChange={(e) => handleChange('cor', e.target.value)}
-              />
-              <FormInput
-                label="Observações"
-                placeholder="Observações adicionais"
-                value={formData.observacoes || ''}
-                onChange={(e) => handleChange('observacoes', e.target.value)}
-                multiline={true}
-                rows={3}
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditing(null);
-                  setFormData({
-                    numero_registro: '',
-                    nome: '',
-                    categoria: '',
-                    peso_kg: undefined,
-                    cor: '',
-                    observacoes: ''
-                  });
-                }}
-              >
-                Limpar
-              </Button>
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={loading}
-              >
-                {loading ? 'Salvando...' : (editing ? 'Atualizar' : 'Criar')}
-              </Button>
-            </div>
-          </form>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Média de Peso</span>
+          <div className="text-2xl font-black text-amber-700 mt-1">
+            {bois.length > 0
+              ? Math.round(
+                  bois.filter((b) => b.peso_kg).reduce((acc, b) => acc + (b.peso_kg || 0), 0) /
+                    (bois.filter((b) => b.peso_kg).length || 1)
+                ) + ' kg'
+              : '0 kg'}
+          </div>
         </div>
-
-        {/* Table */}
-        <div className="bg-white shadow-sm rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Bois Cadastrados
-          </h2>
-          <DataTable
-            columns={[
-              { key: 'numero_registro', label: 'Nº Registro' },
-              { key: 'nome', label: 'Nome' },
-              { key: 'categoria', label: 'Categoria' },
-              {
-                key: 'peso_kg',
-                label: 'Peso (kg)',
-                format: (value) => value !== undefined ? `${value} kg` : '-'
-              },
-              { key: 'cor', label: 'Cor' },
-              { key: 'observacoes', label: 'Observações' },
-              {
-                key: 'criado_em',
-                label: 'Criado em',
-                format: (value) => new Date(value).toLocaleDateString('pt-BR')
-              }
-            ]}
-            data={bois}
-            showActions={true}
-            actions={[
-              { label: 'Editar', onClick: handleEdit, variant: 'default' },
-              { label: 'Excluir', onClick: handleDelete, variant: 'destructive' }
-            ]}
-            onRowClick={(boi) => {
-              console.log('Clicked on boi:', boi);
-            }}
-          />
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Categorias Ativas</span>
+          <div className="text-2xl font-black text-emerald-700 mt-1">{categorias.length || 1}</div>
         </div>
       </div>
+
+      {/* Barra de Filtros e Busca */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row gap-3">
+        <div className="flex-1">
+          <input
+            type="text"
+            placeholder="Buscar por nome, número de registro ou pelagem..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+          />
+        </div>
+        <div className="w-full sm:w-48">
+          <select
+            value={filtroCategoria}
+            onChange={(e) => setFiltroCategoria(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900 bg-white"
+          >
+            <option value="">Todas as Categorias</option>
+            {categorias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Tabela de Bois */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        {loading ? (
+          <div className="p-12 text-center text-slate-500 font-mono text-sm">Carregando animais...</div>
+        ) : boisFiltrados.length === 0 ? (
+          <div className="p-12 text-center">
+            <span className="text-3xl block mb-2">🐂</span>
+            <p className="text-slate-600 font-medium">Nenhum boi encontrado.</p>
+            <p className="text-slate-400 text-xs mt-1">Cadastre um novo boi ou revise os filtros aplicados.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-700">
+              <thead className="bg-slate-50 text-slate-600 text-xs uppercase font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3">Registro</th>
+                  <th className="px-4 py-3">Nome / Identificação</th>
+                  <th className="px-4 py-3">Categoria</th>
+                  <th className="px-4 py-3">Peso</th>
+                  <th className="px-4 py-3">Pelagem</th>
+                  <th className="px-4 py-3">Observações</th>
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {boisFiltrados.map((b) => (
+                  <tr key={b.id} className="hover:bg-slate-50/75 transition">
+                    <td className="px-4 py-3 font-mono font-bold text-slate-900">
+                      #{b.numero_registro || '-'}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{b.nome || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                        {b.categoria || 'GERAL'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-600">
+                      {b.peso_kg ? `${b.peso_kg} kg` : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{b.cor || '-'}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">
+                      {b.observacoes || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right space-x-2">
+                      <button
+                        onClick={() => abrirEdicao(b)}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-xs font-semibold transition"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => setModalExcluir(b)}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-md text-xs font-semibold transition"
+                      >
+                        Excluir
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL: NOVO / EDITAR BOI */}
+      {(modalNovo || modalEditar.aberto) && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <h2 className="text-xl font-bold text-slate-900 mb-1">
+              {modalEditar.aberto ? 'Editar Boi' : 'Cadastrar Novo Boi'}
+            </h2>
+            <p className="text-xs text-slate-500 mb-5">
+              Informe os dados do animal para controle do lote oficial
+            </p>
+
+            <form onSubmit={handleSalvar} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Nº Registro *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.numero_registro || ''}
+                    onChange={(e) => setFormData({ ...formData, numero_registro: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    placeholder="Ex: 014"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Nome / Apelido *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.nome || ''}
+                    onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    placeholder="Ex: Mochador do Sertão"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Categoria
+                  </label>
+                  <select
+                    value={formData.categoria || 'ABERTA'}
+                    onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  >
+                    <option value="ABERTA">Aberta</option>
+                    <option value="PROFISSIONAL">Profissional</option>
+                    <option value="AMADOR">Amador</option>
+                    <option value="ASPIRANTE">Aspirante</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                    Peso (kg)
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.peso_kg || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, peso_kg: e.target.value ? Number(e.target.value) : undefined })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    placeholder="Ex: 480"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Pelagem</label>
+                  <input
+                    type="text"
+                    value={formData.cor || ''}
+                    onChange={(e) => setFormData({ ...formData, cor: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    placeholder="Ex: Castanho"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Observações
+                </label>
+                <textarea
+                  rows={2}
+                  value={formData.observacoes || ''}
+                  onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  placeholder="Observações veterinárias ou características de corrida"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalNovo(false);
+                    setModalEditar({ aberto: false, boi: null });
+                  }}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-bold transition shadow-xs"
+                >
+                  {modalEditar.aberto ? 'Salvar Alterações' : 'Cadastrar Boi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO (SEM WINDOW.CONFIRM) */}
+      {modalExcluir && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center text-xl mb-3">
+              ⚠️
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">Confirmar exclusão de boi?</h3>
+            <p className="text-sm text-slate-500 mt-1 mb-5">
+              Você está prestes a remover o animal <strong>#{modalExcluir.numero_registro} - {modalExcluir.nome}</strong>. Esta ação não poderá ser desfeita se não houver corridas atreladas.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setModalExcluir(null)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-semibold transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarExclusao}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold transition shadow-xs"
+              >
+                Confirmar Exclusão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

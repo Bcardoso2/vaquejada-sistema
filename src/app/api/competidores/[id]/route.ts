@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { exigirSessao } from '@/lib/api-auth';
-import { validarCpf, formatarCpf, limparCpf, mascararCpf, mascararTelefone } from '@/lib/cpf';
+import { validarCpf, formatarCpf, limparCpf } from '@/lib/cpf';
+import {
+  criptografarCpf,
+  descriptografarCpf,
+  gerarBlindIndexCpf,
+} from '@/lib/cpf-crypto';
 import { registrarAuditoria } from '@/lib/audit';
 
 interface RouteContext {
@@ -82,7 +87,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           id: c.id,
           nome: c.nome,
           apelido_pista: c.apelido_pista || '',
-          cpf: formatarCpf(c.cpf),
+          cpf: descriptografarCpf(c.cpf_encrypted || c.cpf),
           cidade: c.cidade || '',
           uf: c.uf || '',
           telefone: c.telefone || '',
@@ -164,16 +169,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       if (!validarCpf(cpf)) {
         return NextResponse.json({ error: 'CPF inválido.' }, { status: 400 });
       }
-      const cpfLimpo = limparCpf(cpf);
+      const { encrypted: cpfEncrypted, blindIndex: cpfBlindIndex } = criptografarCpf(cpf);
       const existeOutro = await query(
-        `SELECT id FROM competidores WHERE regexp_replace(cpf, '[^0-9]', '', 'g') = $1 AND id != $2`,
-        [cpfLimpo, id]
+        `SELECT id FROM competidores WHERE cpf_blind_index = $1 AND id != $2`,
+        [cpfBlindIndex, id]
       );
       if (existeOutro.rowCount && existeOutro.rowCount > 0) {
         return NextResponse.json({ error: 'Este CPF já pertence a outro competidor.' }, { status: 409 });
       }
       updates.push(`cpf = $${pIdx++}`);
-      values.push(formatarCpf(cpf));
+      values.push(cpfEncrypted);
+      updates.push(`cpf_encrypted = $${pIdx++}`);
+      values.push(cpfEncrypted);
+      updates.push(`cpf_blind_index = $${pIdx++}`);
+      values.push(cpfBlindIndex);
     }
 
     if (cidade !== undefined) {

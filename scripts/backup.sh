@@ -33,6 +33,12 @@ fi
 BACKUP_SIZE=$(ls -lh "${BACKUP_FILE}" | awk '{print $5}')
 echo "✅ Backup concluído com sucesso!"
 echo "📁 Arquivo gerado: ${BACKUP_FILE} (${BACKUP_SIZE})"
+
+# Rotacionar backups: remove arquivos com mais de 7 dias
+echo "🧹 Verificando retenção de 7 dias..."
+DELETED_COUNT=$(find "${BACKUP_DIR}" -type f -name "${DB_NAME}_backup_*.dump" -mtime +7 | wc -l | tr -d ' ')
+find "${BACKUP_DIR}" -type f -name "${DB_NAME}_backup_*.dump" -mtime +7 -delete
+echo "🗑️ Backups antigos removidos (> 7 dias): ${DELETED_COUNT}"
 echo "===================================================================="
 
 echo "${BACKUP_FILE}"
