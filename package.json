@@ -11,11 +11,15 @@
     "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.6",
     "bcryptjs": "^3.0.3",
+    "exceljs": "^4.4.0",
     "jose": "^6.2.12",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.475.0",
     "next": "^15.2.1",
     "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import QRCode from 'qrcode';
 
 interface SenhaDetalhes {
   id: string;
@@ -32,6 +33,7 @@ export default function ComprovanteTermicoPage() {
   const [loading, setLoading] = useState(true);
   const [larguraTermica, setLarguraTermica] = useState<'80mm' | '58mm'>('80mm');
   const [erro, setErro] = useState<string | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -44,9 +46,25 @@ export default function ComprovanteTermicoPage() {
         }
         return res.json();
       })
-      .then((data) => {
+      .then((data: SenhaDetalhes) => {
         setSenha(data);
         setLoading(false);
+
+        // Gera QR Code real de alta legibilidade com o código da senha e metadados
+        const conteudoQr = JSON.stringify({
+          senha: data.codigo,
+          cat: data.categoria,
+          id: data.id,
+          puxador: data.puxador_nome,
+        });
+
+        QRCode.toDataURL(conteudoQr, {
+          width: 160,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+        })
+          .then((url) => setQrCodeDataUrl(url))
+          .catch((err) => console.error('Erro ao gerar QR Code:', err));
       })
       .catch((err) => {
         setErro(err.message);
@@ -237,15 +255,26 @@ export default function ComprovanteTermicoPage() {
           </div>
         </div>
 
-        {/* CÓDIGO DE BARRAS / SIMULAÇÃO GRÁFICA */}
-        <div className="text-center pt-1 border-t border-dashed border-black">
-          <div className="font-mono text-xs tracking-[4px] font-black my-1">
-            |||| || | ||||| || ||| ||||
-          </div>
-          <span className="text-[8px] text-gray-500 uppercase block">
-            Apresente este canhoto na cancela de chamada
+        {/* QR CODE OFICIAL DA SENHA */}
+        <div className="text-center pt-2 border-t border-dashed border-black">
+          {qrCodeDataUrl ? (
+            <div className="flex flex-col items-center justify-center my-1">
+              <img
+                src={qrCodeDataUrl}
+                alt={`QR Code Senha #${senha.codigo}`}
+                className="w-24 h-24 border border-black p-1 bg-white"
+              />
+              <span className="font-mono text-[9px] font-bold mt-1">SENHA #{senha.codigo}</span>
+            </div>
+          ) : (
+            <div className="w-24 h-24 mx-auto my-1 border border-black flex items-center justify-center text-[9px]">
+              Carregando QR...
+            </div>
+          )}
+          <span className="text-[8px] text-gray-600 uppercase block font-semibold">
+            Apresente este QR Code na cancela para validação
           </span>
-          <span className="text-[8px] font-bold mt-1 block">BOA SORTE! • VAQUEJADA DE TRADIÇÃO</span>
+          <span className="text-[8px] font-black mt-1 block">BOA SORTE! • VAQUEJADA DE TRADIÇÃO</span>
         </div>
       </div>
     </div>

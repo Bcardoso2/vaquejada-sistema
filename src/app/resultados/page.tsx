@@ -141,18 +141,48 @@ export default function ResultadosOficiaisPage() {
             Apuração em tempo real com validação de pista e mesa de julgamento
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={`/api/relatorios/resultados?formato=pdf&categoria=${categoriaFiltro}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+            title="Baixar Relatório Oficial de Resultados em PDF nativo"
+          >
+            <span>📕</span>
+            <span>Resultados PDF</span>
+          </a>
+          <a
+            href={`/api/relatorios/resultados?formato=xlsx&categoria=${categoriaFiltro}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+            title="Baixar Resultados em planilha Microsoft Excel (.xlsx)"
+          >
+            <span>📗</span>
+            <span>Excel (.xlsx)</span>
+          </a>
+          <a
+            href={`/api/relatorios/resultados?formato=csv&categoria=${categoriaFiltro}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+            title="Baixar Resultados em formato CSV"
+          >
+            <span>📄</span>
+            <span>CSV</span>
+          </a>
           <button
             onClick={carregarDados}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold transition"
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
           >
-            Atualizar Classificação
+            ↻ Atualizar
           </button>
           <Link
             href="/mapa"
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition shadow-xs"
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition shadow-xs"
           >
-            Ver Mapa da Pista
+            Ver Mapa
           </Link>
         </div>
       </div>

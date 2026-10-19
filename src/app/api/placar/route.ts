@@ -6,32 +6,41 @@ import { extrairIpCliente } from '@/lib/auth';
 let cacheMemoria: { timestamp: number; payload: any } | null = null;
 const CACHE_TTL_MS = 1500;
 
-// Rate limit simples por IP na memória: máx 60 reqs / min por IP
+// Rate limit por IP na memória: configurável via PLACAR_RATE_LIMIT_PER_MINUTE
+// Em eventos presenciais com Wi-Fi compartilhado (NAT comum para centenas de celulares),
+// recomenda-se valor entre 1200 e 3000 req/min, ou 0 para desativar. Padrão seguro: 300 req/min.
 const rateLimitIpMap = new Map<string, { count: number; resetEm: number }>();
 
 // GET /api/placar - Endpoint PÚBLICO somente leitura para o telão do evento
 // 1. Suporta cache curto (1-2s) no servidor
-// 2. Rate limit por IP
+// 2. Rate limit por IP configurável
 // 3. Token opcional via URL ?t=... configurável por PLACAR_TOKEN
 export async function GET(request: NextRequest) {
   try {
     const ip = extrairIpCliente(request);
     const agora = Date.now();
 
-    // 1. Rate Limit por IP (60 requisições por minuto)
-    const ipData = rateLimitIpMap.get(ip) || { count: 0, resetEm: agora + 60000 };
-    if (agora > ipData.resetEm) {
-      ipData.count = 0;
-      ipData.resetEm = agora + 60000;
-    }
-    ipData.count++;
-    rateLimitIpMap.set(ip, ipData);
+    // 1. Rate Limit configurável por IP (padrão 300 req/min para evitar bloqueio em Wi-Fi de evento)
+    const limitEnv = process.env.PLACAR_RATE_LIMIT_PER_MINUTE;
+    const maxReqPorMinuto = limitEnv !== undefined && !isNaN(Number(limitEnv))
+      ? Number(limitEnv)
+      : 300;
 
-    if (ipData.count > 60) {
-      return NextResponse.json(
-        { error: 'Limite de requisições ao telão excedido para este IP. Aguarde um momento.' },
-        { status: 429, headers: { 'Retry-After': '5' } }
-      );
+    if (maxReqPorMinuto > 0) {
+      const ipData = rateLimitIpMap.get(ip) || { count: 0, resetEm: agora + 60000 };
+      if (agora > ipData.resetEm) {
+        ipData.count = 0;
+        ipData.resetEm = agora + 60000;
+      }
+      ipData.count++;
+      rateLimitIpMap.set(ip, ipData);
+
+      if (ipData.count > maxReqPorMinuto) {
+        return NextResponse.json(
+          { error: `Limite de requisições ao telão excedido para este IP (${maxReqPorMinuto} req/min). Aguarde um momento.` },
+          { status: 429, headers: { 'Retry-After': '5' } }
+        );
+      }
     }
 
     // 2. Validação de Token opcional configurável por PLACAR_TOKEN

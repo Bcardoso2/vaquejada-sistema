@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { exigirSessao } from '@/lib/api-auth';
 import { registrarAuditoria } from '@/lib/audit';
+import { gerarSumulaBateriaPDF } from '@/lib/relatorios-export';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-// GET /api/relatorios/bateria/[id] - Súmula / Ordem de Largada da Bateria em PDF (HTML imprimível A4)
+// GET /api/relatorios/bateria/[id] - Súmula / Ordem de Largada da Bateria em PDF nativo baixável e HTML imprimível
 // Autorizado para: ADMIN, SECRETARIA e OPERADOR_PISTA
 // Registra auditoria a cada exportação
 // ZERO CPF completo
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const url = new URL(request.url);
-    const formato = url.searchParams.get('formato') || 'pdf';
+    const formato = (url.searchParams.get('formato') || 'pdf').toLowerCase();
 
     // 1. Consultar dados da bateria e da vaquejada
     const batRes = await query(
@@ -80,8 +81,29 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // 4. Renderizar Súmula Oficial em Formato A4 Imprimível / PDF
     const dataHoraEmissao = new Date().toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
+
+    // 4. FORMATO PDF NATIVO BAIXÁVEL (jsPDF)
+    if (formato === 'pdf') {
+      const buffer = await gerarSumulaBateriaPDF({
+        vaquejadaNome: bateria.vaquejada_nome || 'Grande Vaquejada Portal',
+        vaquejadaLocal: bateria.vaquejada_local,
+        bateriaNumero: bateria.numero,
+        totalCorridas: corridasRes.rowCount || 0,
+        emitidoPor: `${auth.session.nome} (${auth.session.papel})`,
+        dataHoraEmissao,
+        corridas: corridasRes.rows,
+      });
+
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="sumula_bateria_${bateria.numero}.pdf"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
 
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">

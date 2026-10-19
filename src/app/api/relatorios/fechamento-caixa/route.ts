@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { exigirSessao } from '@/lib/api-auth';
 import { registrarAuditoria } from '@/lib/audit';
+import {
+  gerarFechamentoCaixaXLSX,
+  gerarFechamentoCaixaPDF,
+  formatarMoeda,
+} from '@/lib/relatorios-export';
 
 // GET /api/relatorios/fechamento-caixa - Fechamento financeiro por operador/turno e geral
 // Autorizado para: ADMIN e SECRETARIA
+// Suporta XLSX de verdade (ExcelJS), PDF nativo baixável (jsPDF), CSV e HTML
 // Registra auditoria a cada exportação
 // ZERO CPF completo
 export async function GET(request: NextRequest) {
@@ -96,13 +102,36 @@ export async function GET(request: NextRequest) {
       motivo: `Exportação de Fechamento de Caixa (${formato.toUpperCase()}) por ${auth.session.nome}`,
     });
 
-    const formatarMoeda = (centavos: number) =>
-      (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
     const dataHoraEmissao = new Date().toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
 
-    // 7. Formato EXCEL (CSV com BOM UTF-8 e separador ;)
-    if (formato === 'excel' || formato === 'csv') {
+    // 7. FORMATO XLSX DE VERDADE (ExcelJS)
+    if (formato === 'xlsx' || formato === 'excel') {
+      const buffer = await gerarFechamentoCaixaXLSX({
+        vaquejadaNome: vaquejada.nome,
+        vaquejadaLocal: vaquejada.local,
+        operador,
+        emitidoPor: `${auth.session.nome} (${auth.session.papel})`,
+        dataHoraEmissao,
+        totalBrutoCentavos,
+        totalEstornosCentavos,
+        totalLiquidoCentavos,
+        porFormaPagamento,
+        porOperador,
+        pagamentos,
+      });
+
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="fechamento_caixa_${operador || 'geral'}.xlsx"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    // 8. FORMATO CSV
+    if (formato === 'csv') {
       const linhas: string[] = [];
 
       linhas.push(`FECHAMENTO DE CAIXA - ${vaquejada.nome.toUpperCase()}`);
@@ -142,6 +171,31 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': `attachment; filename="fechamento_caixa_${operador || 'geral'}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    // 9. FORMATO PDF NATIVO BAIXÁVEL (jsPDF)
+    if (formato === 'pdf') {
+      const buffer = await gerarFechamentoCaixaPDF({
+        vaquejadaNome: vaquejada.nome,
+        vaquejadaLocal: vaquejada.local,
+        operador,
+        emitidoPor: `${auth.session.nome} (${auth.session.papel})`,
+        dataHoraEmissao,
+        totalBrutoCentavos,
+        totalEstornosCentavos,
+        totalLiquidoCentavos,
+        porFormaPagamento,
+        pagamentos,
+      });
+
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="fechamento_caixa_${operador || 'geral'}.pdf"`,
           'Cache-Control': 'no-store',
         },
       });

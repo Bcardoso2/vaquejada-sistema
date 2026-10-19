@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { exigirSessao } from '@/lib/api-auth';
 import { registrarAuditoria } from '@/lib/audit';
+import {
+  gerarResultadosXLSX,
+  gerarResultadosPDF,
+} from '@/lib/relatorios-export';
 
-// GET /api/relatorios/resultados - Relatório de resultados por categoria e por bateria em PDF e Excel
+// GET /api/relatorios/resultados - Relatório de resultados por categoria e por bateria em PDF nativo e XLSX real
 // Autorizado para: ADMIN e SECRETARIA
 // Registra auditoria a cada exportação
 // ZERO CPF completo
@@ -83,8 +87,33 @@ export async function GET(request: NextRequest) {
 
     const dataHoraEmissao = new Date().toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
 
-    // 4. Formato EXCEL (CSV formatado com UTF-8 BOM e delimitador ;)
-    if (formato === 'excel' || formato === 'csv') {
+    // 4. FORMATO XLSX DE VERDADE (ExcelJS)
+    if (formato === 'xlsx' || formato === 'excel') {
+      const buffer = await gerarResultadosXLSX({
+        vaquejadaNome: vaquejada.nome,
+        categoria,
+        bateriaId,
+        emitidoPor: `${auth.session.nome} (${auth.session.papel})`,
+        dataHoraEmissao,
+        corridas,
+        totalCorridas,
+        totalValeu,
+        totalZero,
+        aproveitamento,
+      });
+
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="resultados_vaquejada_${categoria || 'geral'}.xlsx"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    // 5. FORMATO CSV
+    if (formato === 'csv') {
       const cabecalho = [
         'Bateria',
         'Ordem',
@@ -126,6 +155,32 @@ export async function GET(request: NextRequest) {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': `attachment; filename="resultados_vaquejada_${categoria || 'geral'}.csv"`,
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
+    // 6. FORMATO PDF NATIVO BAIXÁVEL (jsPDF)
+    if (formato === 'pdf') {
+      const buffer = await gerarResultadosPDF({
+        vaquejadaNome: vaquejada.nome,
+        vaquejadaLocal: vaquejada.local,
+        categoria,
+        bateriaId,
+        emitidoPor: `${auth.session.nome} (${auth.session.papel})`,
+        dataHoraEmissao,
+        corridas,
+        totalCorridas,
+        totalValeu,
+        totalZero,
+        aproveitamento,
+      });
+
+      return new Response(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="resultados_vaquejada_${categoria || 'geral'}.pdf"`,
           'Cache-Control': 'no-store',
         },
       });

@@ -156,30 +156,41 @@ export default function FinanceiroPage() {
             href="/api/relatorios/fechamento-caixa?formato=pdf"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
-            title="Exportar fechamento contábil oficial em PDF"
+            className="px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar fechamento contábil oficial em PDF nativo"
           >
-            <span>📄</span>
+            <span>📕</span>
             <span>Fechamento PDF</span>
           </a>
 
           <a
-            href="/api/relatorios/fechamento-caixa?formato=excel"
+            href="/api/relatorios/fechamento-caixa?formato=xlsx"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
-            title="Exportar planilha de fechamento para Microsoft Excel"
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar planilha de fechamento para Microsoft Excel (.xlsx)"
           >
             <span>📗</span>
-            <span>Fechamento Excel</span>
+            <span>Excel (.xlsx)</span>
+          </a>
+
+          <a
+            href="/api/relatorios/fechamento-caixa?formato=csv"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar dados de fechamento em CSV"
+          >
+            <span>📄</span>
+            <span>CSV</span>
           </a>
 
           <a
             href="/api/relatorios/resultados?formato=pdf"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
-            title="Exportar relatório de resultados por categoria e bateria"
+            className="px-3 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-bold text-xs transition shadow-xs flex items-center gap-1.5"
+            title="Exportar relatório de resultados por categoria e bateria em PDF"
           >
             <span>📊</span>
             <span>Resultados PDF</span>
