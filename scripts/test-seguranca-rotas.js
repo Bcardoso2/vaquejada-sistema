@@ -34,9 +34,11 @@ const MATRIZ_ROTAS = {
   '/auditoria': { tipo: 'TELA', roles: ['ADMIN'], authExigida: true },
   '/competidores': { tipo: 'TELA', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/cavalos': { tipo: 'TELA', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
+  '/placar': { tipo: 'TELA', roles: ['PUBLICO'], authExigida: false },
 
   // APIs
   '/api/auth/login': { tipo: 'API', roles: ['PUBLICO'], authExigida: false },
+  '/api/placar': { tipo: 'API', roles: ['PUBLICO'], authExigida: false },
   '/api/auth/logout': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/api/auth/me': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/api/secretaria/vendas': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
@@ -45,6 +47,7 @@ const MATRIZ_ROTAS = {
   '/api/financeiro': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
   '/api/bois-ouro': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA'], authExigida: true },
   '/api/mapa': { tipo: 'API', roles: ['ADMIN', 'OPERADOR_PISTA'], authExigida: true },
+  '/api/baterias': { tipo: 'API', roles: ['ADMIN', 'OPERADOR_PISTA', 'SECRETARIA', 'JUIZ'], authExigida: true },
   '/api/juiz': { tipo: 'API', roles: ['ADMIN', 'JUIZ'], authExigida: true },
   '/api/resultados-senhas': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },
   '/api/competidores': { tipo: 'API', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'], authExigida: true },

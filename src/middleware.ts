@@ -43,7 +43,7 @@ const REGRAS_TELAS: Record<string, UserRole[]> = {
 // Matriz de permissões para APIs
 const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/usuarios', roles: ['ADMIN'] },
-  { prefixo: '/api/auditoria', roles: ['ADMIN'] },
+  { prefixo: '/api/auditoria', roles: ['ADMIN', 'OPERADOR_PISTA', 'SECRETARIA', 'JUIZ'] },
   { prefixo: '/api/competidores', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/cavalos', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/bois-ouro', roles: ['ADMIN', 'SECRETARIA'] },
@@ -60,9 +60,8 @@ const REGRAS_APIS: { prefixo: string; roles: UserRole[] }[] = [
   { prefixo: '/api/contestacoes', roles: ['ADMIN', 'JUIZ'] },
   { prefixo: '/api/resultados-senhas', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
   { prefixo: '/api/resultados', roles: ['ADMIN', 'SECRETARIA', 'OPERADOR_PISTA', 'JUIZ'] },
+  { prefixo: '/api/baterias', roles: ['ADMIN', 'OPERADOR_PISTA', 'SECRETARIA', 'JUIZ'] },
 ];
-
-
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -76,7 +75,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/simbolo') ||
     pathname.includes('.') ||
     pathname === '/api/auth/login' ||
-    pathname === '/acesso-negado'
+    pathname === '/acesso-negado' ||
+    pathname === '/placar' ||
+    pathname === '/api/placar'
   ) {
     return NextResponse.next();
   }

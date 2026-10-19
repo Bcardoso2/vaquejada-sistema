@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface Corrida {
   id: string;
@@ -10,6 +10,9 @@ interface Corrida {
   boi_numero: number;
   tipo: string;
   ordem_mapa: number;
+  ordem_na_bateria?: number;
+  bateria_id?: string;
+  tipo_entrada?: string;
   estado: string;
   resultado_inicial: string | null;
   resultado_final: string | null;
@@ -19,414 +22,663 @@ interface Corrida {
   senha_codigo: string;
   puxador_nome: string;
   esteira_nome: string;
+  puxador_apelido?: string;
+  esteira_apelido?: string;
   senha_categoria: string;
   boi_nome: string;
   boi_numero_registro: string;
   tem_contestacao: string | number;
 }
 
+interface BateriaInfo {
+  id: string;
+  numero: number;
+  status: string;
+  tamanho_maximo: number;
+  total_corridas: number;
+  corridas_concluidas: number;
+}
+
 export default function MapaPistaPage() {
   const [corridas, setCorridas] = useState<Corrida[]>([]);
+  const [baterias, setBaterias] = useState<BateriaInfo[]>([]);
+  const [bateriaSelecionada, setBateriaSelecionada] = useState<string>('TODAS');
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
-  const [filtroCategoria, setFiltroCategoria] = useState<string>('TODAS');
-  const [operadorNome] = useState('Operador de Pista');
-  
-  // Modal de Exceção
+  const [modoPista, setModoPista] = useState<boolean>(true); // Ativo por padrão para operadores em pista
+  const [toast, setToast] = useState<{ mensagem: string; tipo: 'sucesso' | 'erro' | 'aviso' } | null>(null);
+
+  // Estados de confirmação em 2 toques (Two-tap confirmation)
+  const [confirmacaoZero, setConfirmacaoZero] = useState<{ id: string; timer: NodeJS.Timeout | null } | null>(null);
+  const [confirmacaoCancelar, setConfirmacaoCancelar] = useState<{ id: string; timer: NodeJS.Timeout | null } | null>(null);
+
+  // Cronômetro de Cancela
+  const [tempoCancelaPadrao, setTempoCancelaPadrao] = useState<number>(30);
+  const [tempoRestanteCancela, setTempoRestanteCancela] = useState<number | null>(null);
+  const [cancelaAtiva, setCancelaAtiva] = useState<boolean>(false);
+  const [avisoSonoro, setAvisoSonoro] = useState<boolean>(true);
+  const cancelaTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Modais
   const [modalExcecao, setModalExcecao] = useState<{ aberto: boolean; corrida: Corrida | null; motivo: string }>({
     aberto: false,
     corrida: null,
     motivo: '',
   });
 
-  const carregarMapa = async () => {
+  const [modalGerarBaterias, setModalGerarBaterias] = useState<{ aberto: boolean; tamanho: number }>({
+    aberto: false,
+    tamanho: 15,
+  });
+
+  const exibirToast = (mensagem: string, tipo: 'sucesso' | 'erro' | 'aviso' = 'sucesso') => {
+    setToast({ mensagem, tipo });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  // Áudio sintetizado via Web Audio API para avisos de cancela (sem arquivos externos)
+  const tocarSomCancela = (frequencia: number, duracao: number) => {
+    if (!avisoSonoro || typeof window === 'undefined') return;
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequencia;
+      gain.gain.value = 0.3;
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      setTimeout(() => {
+        osc.stop();
+        audioCtx.close();
+      }, duracao);
+    } catch {
+      // Ignora erro se áudio não suportado
+    }
+  };
+
+  // Carregar dados do mapa e baterias
+  const carregarDados = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/mapa');
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setCorridas(data);
+      const [resMapa, resBat] = await Promise.all([
+        fetch('/api/mapa'),
+        fetch('/api/baterias?vaquejada_id=vq-2026-portal'),
+      ]);
+      const dataMapa = await resMapa.json();
+      const dataBat = await resBat.json();
+
+      if (Array.isArray(dataMapa)) setCorridas(dataMapa);
+      if (Array.isArray(dataBat)) {
+        setBaterias(dataBat);
+        // Selecionar por padrão a bateria em andamento se existir
+        const batAndamento = dataBat.find((b: BateriaInfo) => b.status === 'EM_ANDAMENTO');
+        if (batAndamento && bateriaSelecionada === 'TODAS') {
+          setBateriaSelecionada(batAndamento.id);
+        }
       }
-    } catch (err) {
-      console.error('Erro ao carregar mapa:', err);
+    } catch {
+      exibirToast('Erro de conexão ao carregar mapa e baterias', 'erro');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    carregarMapa();
+    carregarDados();
   }, []);
 
+  // Lógica do Cronômetro de Cancela
+  const iniciarCancela = (tempoSegundos?: number) => {
+    const tempo = tempoSegundos || tempoCancelaPadrao;
+    setTempoRestanteCancela(tempo);
+    setCancelaAtiva(true);
+    tocarSomCancela(880, 200); // Bip inicial de chamada
+  };
+
+  const pararCancela = () => {
+    setCancelaAtiva(false);
+    setTempoRestanteCancela(null);
+    if (cancelaTimerRef.current) clearInterval(cancelaTimerRef.current);
+  };
+
+  useEffect(() => {
+    if (!cancelaAtiva || tempoRestanteCancela === null) return;
+
+    cancelaTimerRef.current = setInterval(() => {
+      setTempoRestanteCancela((prev) => {
+        if (prev === null || prev <= 1) {
+          // TEMPO ESTOURADO!
+          pararCancela();
+          tocarSomCancela(440, 800); // Som longo de estouro
+          exibirToast('⚠️ TEMPO DE CANCELA ESGOTADO! Registrado na auditoria.', 'aviso');
+
+          // Registrar na auditoria
+          fetch('/api/auditoria', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              acao: 'ESTOURO_TEMPO_CANCELA',
+              entidade: 'pista',
+              detalhes: { tempoTolerancia: tempoCancelaPadrao, corridaAtiva: corridaAtiva?.id || null },
+              motivo: `Tempo de cancela (${tempoCancelaPadrao}s) esgotado para apresentação da dupla`,
+            }),
+          }).catch(() => {});
+
+          return 0;
+        }
+
+        // Bips curtos nos últimos 5 segundos
+        if (prev <= 6 && prev > 1) {
+          tocarSomCancela(750, 150);
+        }
+
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (cancelaTimerRef.current) clearInterval(cancelaTimerRef.current);
+    };
+  }, [cancelaAtiva]);
+
+  // Ações de Pista
   const executarAcao = async (acao: string, corridaId: string, resultado?: string) => {
     try {
       const res = await fetch('/api/mapa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao, corridaId, resultado, operadorNome }),
+        body: JSON.stringify({ acao, corridaId, resultado }),
       });
       const data = await res.json();
       if (res.ok) {
-        await carregarMapa();
+        exibirToast(`Ação ${acao} executada com sucesso!`);
+        if (acao === 'INICIAR' || acao === 'CONCLUIR') {
+          pararCancela();
+        }
+        await carregarDados();
       } else {
-        alert(data.error || 'Erro ao executar ação');
+        exibirToast(data.error || 'Erro ao executar ação', 'erro');
       }
-    } catch (err) {
-      alert('Erro de conexão ao atualizar mapa');
+    } catch {
+      exibirToast('Erro de comunicação com o servidor', 'erro');
     }
   };
 
-  const confirmarExcecao = async () => {
-    if (!modalExcecao.corrida || !modalExcecao.motivo.trim()) {
-      alert('Informe a justificativa da exceção de mapa');
+  // Confirmação em 2 toques para ZERO
+  const dispararConfirmacaoZero = (corridaId: string) => {
+    if (confirmacaoZero && confirmacaoZero.id === corridaId) {
+      // Segundo toque confirmado!
+      if (confirmacaoZero.timer) clearTimeout(confirmacaoZero.timer);
+      setConfirmacaoZero(null);
+      executarAcao('REGISTRAR_RESULTADO', corridaId, 'ZERO');
       return;
     }
+
+    // Primeiro toque: arma temporizador de 4 segundos
+    const timer = setTimeout(() => {
+      setConfirmacaoZero(null);
+    }, 4000);
+
+    setConfirmacaoZero({ id: corridaId, timer });
+    tocarSomCancela(600, 100);
+  };
+
+  // Gerar baterias
+  const handleGerarBaterias = async () => {
     try {
-      const res = await fetch('/api/mapa', {
+      const res = await fetch('/api/baterias', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          acao: 'EXCECAO_MAPA',
-          corridaId: modalExcecao.corrida.id,
-          motivoExcecao: modalExcecao.motivo,
-          operadorNome,
-        }),
+        body: JSON.stringify({ acao: 'GERAR', tamanho_bateria: modalGerarBaterias.tamanho }),
       });
+      const data = await res.json();
       if (res.ok) {
-        setModalExcecao({ aberto: false, corrida: null, motivo: '' });
-        await carregarMapa();
+        setModalGerarBaterias({ aberto: false, tamanho: 15 });
+        exibirToast(data.mensagem || 'Baterias geradas com sucesso!');
+        await carregarDados();
       } else {
-        const data = await res.json();
-        alert(data.error || 'Erro ao registrar exceção');
+        exibirToast(data.error || 'Erro ao gerar baterias', 'erro');
       }
     } catch {
-      alert('Erro ao registrar exceção');
+      exibirToast('Erro de comunicação ao gerar baterias', 'erro');
     }
+  };
+
+  // Fechar bateria atual
+  const handleFecharBateria = async (bateriaId: string) => {
+    try {
+      const res = await fetch('/api/baterias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'FECHAR', bateria_id: bateriaId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        exibirToast(data.mensagem || 'Bateria fechada com sucesso!');
+        await carregarDados();
+      } else {
+        exibirToast(data.error || 'Erro ao fechar bateria', 'erro');
+      }
+    } catch {
+      exibirToast('Erro ao fechar bateria', 'erro');
+    }
+  };
+
+  // Imprimir ordem de largada
+  const imprimirOrdemLargada = () => {
+    window.print();
   };
 
   const corridasFiltradas = corridas.filter((c) => {
     const matchEstado = filtroEstado === 'TODOS' || c.estado === filtroEstado;
-    const matchCat = filtroCategoria === 'TODAS' || c.senha_categoria === filtroCategoria;
-    return matchEstado && matchCat;
+    const matchBat = bateriaSelecionada === 'TODAS' || c.bateria_id === bateriaSelecionada;
+    return matchEstado && matchBat;
   });
 
   const corridaAtiva = corridas.find((c) => c.estado === 'CHAMADA' || c.estado === 'EM_EXECUCAO');
 
   return (
-    <div className="space-y-6">
-      {/* Cabeçalho da Página */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            Mapa Geral da Pista
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Controle de ordem de entrada, chamadas de competidores e julgamento imediato
-          </p>
+    <div className={`space-y-6 ${modoPista ? 'bg-slate-950 text-white min-h-screen -m-6 p-6' : ''}`}>
+      {/* BARRA SUPERIOR: CONTROLES DO MODO PISTA & BATERIAS */}
+      <div className={`${modoPista ? 'bg-slate-900 border-2 border-amber-500' : 'bg-white border border-slate-200'} rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 print:hidden`}>
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-amber-500 text-black font-black text-2xl rounded-xl shadow">
+            🤠 MODO PISTA
+          </div>
+          <div>
+            <h1 className={`text-2xl font-black uppercase tracking-tight ${modoPista ? 'text-amber-400' : 'text-slate-900'}`}>
+              Controle Geral de Pista & Baterias
+            </h1>
+            <p className={`text-sm ${modoPista ? 'text-gray-400' : 'text-slate-500'}`}>
+              Botões táteis de alto contraste (mínimo 56px), cronômetro de cancela e ordem de largada
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={carregarMapa}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+
+        {/* CONTROLES RÁPIDOS */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Seletor de Baterias */}
+          <select
+            value={bateriaSelecionada}
+            onChange={(e) => setBateriaSelecionada(e.target.value)}
+            className={`min-h-[48px] px-4 font-bold rounded-xl border-2 text-sm cursor-pointer ${
+              modoPista ? 'bg-slate-800 text-amber-300 border-amber-500' : 'bg-slate-50 text-slate-800 border-slate-300'
+            }`}
           >
-            Atualizar Mapa
+            <option value="TODAS">⚡ Todas as Baterias</option>
+            {baterias.map((b) => (
+              <option key={b.id} value={b.id}>
+                Bateria {b.numero} ({b.status === 'EM_ANDAMENTO' ? '🔥 ATIVA' : b.status}) • {b.total_corridas} duplas
+              </option>
+            ))}
+          </select>
+
+          {/* Botão Gerar Baterias */}
+          <button
+            onClick={() => setModalGerarBaterias({ aberto: true, tamanho: 15 })}
+            className="min-h-[48px] px-4 bg-amber-500 hover:bg-amber-600 text-black font-black text-sm rounded-xl transition shadow flex items-center gap-2"
+          >
+            ⚙️ Gerar Baterias
+          </button>
+
+          {/* Botão Imprimir Folha de Largada */}
+          <button
+            onClick={imprimirOrdemLargada}
+            className="min-h-[48px] px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl transition shadow flex items-center gap-2"
+          >
+            🖨️ Imprimir Largada
+          </button>
+
+          {/* Toggle Alto Contraste / Modo Pista */}
+          <button
+            onClick={() => setModoPista(!modoPista)}
+            className={`min-h-[48px] px-4 font-bold text-sm rounded-xl border-2 transition ${
+              modoPista ? 'bg-black text-amber-400 border-amber-400' : 'bg-slate-100 text-slate-700 border-slate-300'
+            }`}
+          >
+            {modoPista ? '☀️ Alto Contraste (ON)' : 'Visual Padrão'}
           </button>
         </div>
       </div>
 
-      {/* Painel de Corrida Ativa na Pista */}
+      {/* CRONÔMETRO DE CANCELA & CORRIDA ATIVA (CARD DESTAQUE) */}
       {corridaAtiva && (
-        <div className="bg-white border-2 border-slate-900 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                Pista Ativa · Posição #{corridaAtiva.ordem_mapa}
+        <div className={`${modoPista ? 'bg-black border-4 border-amber-400' : 'bg-white border-2 border-slate-900'} rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden print:hidden`}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b-2 border-slate-800 gap-4">
+            <div className="flex items-center gap-3">
+              <span className="w-4 h-4 rounded-full bg-emerald-500 animate-ping"></span>
+              <span className="text-xl font-black uppercase text-amber-400 tracking-wider">
+                DUPLA NA PISTA • POSIÇÃO #{corridaAtiva.ordem_na_bateria || corridaAtiva.ordem_mapa}
               </span>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-700 uppercase">
-              {corridaAtiva.estado === 'CHAMADA' ? 'Competidor Chamado' : 'Em Corrida'}
-            </span>
+
+            {/* PAINEL DO CRONÔMETRO DE CANCELA */}
+            <div className="flex items-center gap-4 bg-slate-900 border-2 border-slate-700 p-3 rounded-2xl">
+              <span className="text-xs font-bold text-gray-400 uppercase">CANCELA:</span>
+              <div
+                className={`text-3xl md:text-4xl font-mono font-black px-4 py-1 rounded-xl border-2 ${
+                  tempoRestanteCancela === null
+                    ? 'text-gray-500 border-gray-700 bg-black'
+                    : tempoRestanteCancela > 15
+                    ? 'text-emerald-400 border-emerald-500 bg-emerald-950/60'
+                    : tempoRestanteCancela > 5
+                    ? 'text-amber-400 border-amber-500 bg-amber-950/60'
+                    : 'text-rose-400 border-rose-500 bg-rose-950/80 animate-pulse'
+                }`}
+              >
+                {tempoRestanteCancela !== null
+                  ? `00:${tempoRestanteCancela.toString().padStart(2, '0')}`
+                  : `00:${tempoCancelaPadrao}`}
+              </div>
+
+              {cancelaAtiva ? (
+                <button
+                  onClick={pararCancela}
+                  className="min-h-[44px] px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl"
+                >
+                  ⏹ Parar
+                </button>
+              ) : (
+                <button
+                  onClick={() => iniciarCancela(tempoCancelaPadrao)}
+                  className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
+                >
+                  ▶ Disparar
+                </button>
+              )}
+
+              {/* Seletor rápido de tempo de cancela */}
+              <div className="flex gap-1 text-xs">
+                {[30, 45, 60].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setTempoCancelaPadrao(t);
+                      if (cancelaAtiva) iniciarCancela(t);
+                    }}
+                    className={`px-2 py-1 rounded font-bold ${
+                      tempoCancelaPadrao === t ? 'bg-amber-500 text-black' : 'bg-slate-800 text-gray-300'
+                    }`}
+                  >
+                    {t}s
+                  </button>
+                ))}
+              </div>
+
+              {/* Botão de Som */}
+              <button
+                onClick={() => setAvisoSonoro(!avisoSonoro)}
+                className={`p-2 rounded-lg text-sm ${avisoSonoro ? 'text-amber-400' : 'text-gray-500'}`}
+                title={avisoSonoro ? 'Avisos sonoros ligados' : 'Avisos sonoros mudos'}
+              >
+                {avisoSonoro ? '🔊' : '🔇'}
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mt-4 items-center">
-            <div className="md:col-span-7">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl font-black text-slate-900 font-mono">
-                  Senha {corridaAtiva.senha_codigo}
+          {/* DADOS DA DUPLA ATIVA */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 my-6 items-center">
+            <div className="lg:col-span-6 space-y-4">
+              <div className="flex items-center gap-4">
+                <span className="text-4xl md:text-5xl font-black font-mono text-white">
+                  SENHA #{corridaAtiva.senha_codigo}
                 </span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                  {corridaAtiva.tipo} ({corridaAtiva.boi_numero}º boi)
-                </span>
-                <span className="text-xs font-semibold text-slate-500">
+                <span className="text-sm font-black px-3 py-1 rounded-xl bg-amber-500 text-black uppercase">
                   {corridaAtiva.senha_categoria}
                 </span>
+                <span className="text-sm font-bold text-emerald-400 uppercase">
+                  BOI #{corridaAtiva.boi_numero || 1}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mt-3 text-sm">
-                <div>
-                  <span className="text-xs text-slate-500 block">Puxador</span>
-                  <span className="font-semibold text-slate-900">{corridaAtiva.puxador_nome || '-'}</span>
+              {/* Puxador e Esteireiro */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-slate-900/90 border-2 border-slate-700 p-4 rounded-2xl">
+                  <span className="text-xs font-bold text-amber-400 uppercase block">PUXADOR</span>
+                  <span className="text-xl md:text-2xl font-black text-white block truncate">
+                    {corridaAtiva.puxador_apelido ? `"${corridaAtiva.puxador_apelido}"` : corridaAtiva.puxador_nome}
+                  </span>
+                  <span className="text-xs text-gray-400 block truncate">{corridaAtiva.puxador_nome}</span>
                 </div>
-                <div>
-                  <span className="text-xs text-slate-500 block">Esteira</span>
-                  <span className="font-semibold text-slate-900">{corridaAtiva.esteira_nome || '-'}</span>
-                </div>
-              </div>
 
-              <div className="text-xs text-slate-500 mt-2">
-                Boi Alocado: <strong className="text-slate-800">{corridaAtiva.boi_nome}</strong> ({corridaAtiva.boi_numero_registro})
+                <div className="bg-slate-900/90 border-2 border-slate-700 p-4 rounded-2xl">
+                  <span className="text-xs font-bold text-blue-400 uppercase block">ESTEIREIRO</span>
+                  <span className="text-xl md:text-2xl font-black text-white block truncate">
+                    {corridaAtiva.esteira_apelido ? `"${corridaAtiva.esteira_apelido}"` : corridaAtiva.esteira_nome}
+                  </span>
+                  <span className="text-xs text-gray-400 block truncate">{corridaAtiva.esteira_nome}</span>
+                </div>
               </div>
             </div>
 
-            {/* Ações da Pista */}
-            <div className="md:col-span-5 flex flex-wrap gap-2 justify-end">
+            {/* BOTÕES DE AÇÃO DE ALTO IMPACTO (MÍNIMO 56PX DE ALTURA PARA DEDO GRANDE SOB SOL) */}
+            <div className="lg:col-span-6 flex flex-col gap-3">
               {corridaAtiva.estado === 'CHAMADA' && (
                 <button
-                  onClick={() => executarAcao('INICIAR', corridaAtiva.id)}
-                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-lg shadow-xs transition"
+                  onClick={() => {
+                    executarAcao('INICIAR', corridaAtiva.id);
+                    iniciarCancela();
+                  }}
+                  className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-3 uppercase tracking-wider"
                 >
-                  Abrir Porteira (Iniciar)
+                  🚪 ABRIR PORTEIRA (INICIAR CORRIDA)
                 </button>
               )}
 
               {corridaAtiva.estado === 'EM_EXECUCAO' && (
-                <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* VALEU BOI */}
                   <button
                     onClick={() => executarAcao('REGISTRAR_RESULTADO', corridaAtiva.id, 'VALEU')}
-                    className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm rounded-lg shadow-xs transition"
+                    className="min-h-[64px] bg-emerald-500 hover:bg-emerald-600 text-black font-black text-xl md:text-2xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider"
                   >
-                    Valeu Boi
+                    🟢 VALEU BOI
                   </button>
+
+                  {/* ZERO (CONFIRMAÇÃO EM DOIS TOQUES) */}
                   <button
-                    onClick={() => executarAcao('REGISTRAR_RESULTADO', corridaAtiva.id, 'ZERO')}
-                    className="px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-bold text-sm rounded-lg shadow-xs transition"
+                    onClick={() => dispararConfirmacaoZero(corridaAtiva.id)}
+                    className={`min-h-[64px] font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider ${
+                      confirmacaoZero && confirmacaoZero.id === corridaAtiva.id
+                        ? 'bg-amber-400 text-black border-4 border-white animate-bounce'
+                        : 'bg-rose-600 hover:bg-rose-700 text-white'
+                    }`}
                   >
-                    Zero
+                    {confirmacaoZero && confirmacaoZero.id === corridaAtiva.id
+                      ? '⚠️ TOQUE PARA CONFIRMAR ZERO!'
+                      : '🔴 ZERO'}
                   </button>
+
+                  {/* RETORNO */}
                   <button
                     onClick={() => executarAcao('REGISTRAR_RESULTADO', corridaAtiva.id, 'RETORNO')}
-                    className="px-4 py-2.5 bg-amber-700 hover:bg-amber-800 text-white font-bold text-sm rounded-lg shadow-xs transition"
-                    title="Registra retorno e gera nova oportunidade com outro boi"
+                    className="min-h-[64px] bg-amber-500 hover:bg-amber-600 text-black font-black text-lg md:text-xl rounded-2xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center uppercase tracking-wider"
                   >
-                    Retorno
+                    🔄 RETORNO
                   </button>
-                </>
+                </div>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Filtros */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex flex-wrap gap-1.5 items-center">
-          <span className="text-xs font-semibold text-slate-500 mr-2">Filtrar:</span>
-          {['TODOS', 'NO_MAPA', 'CHAMADA', 'EM_EXECUCAO', 'CONCLUIDA', 'AGUARDANDO_RETORNO'].map((st) => (
+      {/* SELEÇÃO E ORDEM DE LARGADA DA BATERIA (TABELA IMPRIMÍVEL) */}
+      <div className={`${modoPista ? 'bg-slate-900 border-2 border-slate-800' : 'bg-white border border-slate-200'} rounded-3xl p-6 shadow-xl`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-700 mb-6 gap-3">
+          <div>
+            <h2 className="text-xl md:text-2xl font-black text-amber-400 uppercase">
+              📋 ORDEM DE LARGADA DA BATERIA
+            </h2>
+            <p className="text-sm text-gray-400">
+              Total listado: {corridasFiltradas.length} duplas na sequência de pista
+            </p>
+          </div>
+
+          {/* Botão Fechar Bateria */}
+          {bateriaSelecionada !== 'TODAS' && (
             <button
-              key={st}
-              onClick={() => setFiltroEstado(st)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                filtroEstado === st
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              onClick={() => handleFecharBateria(bateriaSelecionada)}
+              className="min-h-[48px] px-5 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-xl shadow print:hidden flex items-center gap-2"
             >
-              {st === 'NO_MAPA' ? 'Na Fila' : st === 'TODOS' ? 'Todos' : st.replace(/_/g, ' ')}
+              🏁 Fechar Bateria e Avançar
             </button>
-          ))}
+          )}
         </div>
 
-        <div className="text-xs text-slate-500">
-          Total de corridas listadas: <strong className="text-slate-800">{corridasFiltradas.length}</strong>
-        </div>
-      </div>
-
-      {/* Tabela do Mapa */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* TABELA DE CORRIDAS */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                <th className="py-3 px-4">Ordem</th>
-                <th className="py-3 px-4">Senha</th>
-                <th className="py-3 px-4">Dupla</th>
-                <th className="py-3 px-4">Boi</th>
-                <th className="py-3 px-4">Tipo</th>
-                <th className="py-3 px-4">Situação</th>
-                <th className="py-3 px-4">Resultado</th>
-                <th className="py-3 px-4 text-right">Ação</th>
+              <tr className="border-b-2 border-slate-700 text-xs font-black uppercase tracking-wider text-amber-400">
+                <th className="py-3 px-4">LARGADA</th>
+                <th className="py-3 px-4">SENHA</th>
+                <th className="py-3 px-4">CATEGORIA</th>
+                <th className="py-3 px-4">PUXADOR & APELIDO</th>
+                <th className="py-3 px-4">ESTEIREIRO</th>
+                <th className="py-3 px-4">TIPO</th>
+                <th className="py-3 px-4">STATUS</th>
+                <th className="py-3 px-4 text-right print:hidden">AÇÕES (56PX)</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
-                    Carregando mapa...
-                  </td>
-                </tr>
-              ) : corridasFiltradas.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400">
-                    Nenhuma corrida encontrada para o filtro selecionado.
-                  </td>
-                </tr>
-              ) : (
-                corridasFiltradas.map((c) => (
+            <tbody className="divide-y divide-slate-800 text-sm font-semibold">
+              {corridasFiltradas.map((c) => {
+                const ativa = c.estado === 'EM_EXECUCAO' || c.estado === 'CHAMADA';
+                return (
                   <tr
                     key={c.id}
-                    className={`hover:bg-slate-50 transition ${
-                      c.estado === 'EM_EXECUCAO'
-                        ? 'bg-emerald-50/50'
-                        : c.estado === 'CHAMADA'
-                        ? 'bg-amber-50/50'
-                        : ''
+                    className={`transition-colors ${
+                      ativa
+                        ? 'bg-amber-950/40 text-amber-300 font-bold border-l-4 border-amber-400'
+                        : 'hover:bg-slate-800/50'
                     }`}
                   >
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
-                      #{c.ordem_mapa}
+                    <td className="py-4 px-4 font-mono font-black text-lg text-amber-400">
+                      #{c.ordem_na_bateria || c.ordem_mapa}
                     </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-900">{c.senha_codigo}</div>
-                      <div className="text-xs text-slate-500">{c.senha_categoria}</div>
+                    <td className="py-4 px-4 font-mono font-black text-base text-white">
+                      {c.senha_codigo}
                     </td>
-                    <td className="py-3.5 px-4">
-                      <div className="text-slate-800 font-medium">{c.puxador_nome || '-'}</div>
-                      <div className="text-xs text-slate-500">Esteira: {c.esteira_nome || '-'}</div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="text-slate-800 font-medium">{c.boi_nome}</div>
-                      <div className="text-xs text-slate-400 font-mono">{c.boi_numero_registro}</div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                        {c.tipo} ({c.boi_numero}º boi)
+                    <td className="py-4 px-4">
+                      <span className="px-2 py-0.5 rounded text-xs font-bold bg-slate-800 text-gray-300">
+                        {c.senha_categoria}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-4">
+                      <div className="text-white font-bold">{c.puxador_apelido ? `"${c.puxador_apelido}"` : c.puxador_nome}</div>
+                      <div className="text-xs text-gray-400 font-normal">{c.puxador_nome}</div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="text-white font-bold">{c.esteira_apelido ? `"${c.esteira_apelido}"` : c.esteira_nome}</div>
+                      <div className="text-xs text-gray-400 font-normal">{c.esteira_nome}</div>
+                    </td>
+                    <td className="py-4 px-4">
                       <span
-                        className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                          c.estado === 'EM_EXECUCAO'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : c.estado === 'CHAMADA'
-                            ? 'bg-amber-100 text-amber-800'
-                            : c.estado === 'CONCLUIDA'
-                            ? 'bg-slate-100 text-slate-600'
-                            : c.estado === 'AGUARDANDO_RETORNO'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-blue-50 text-blue-700'
+                        className={`text-xs px-2 py-0.5 rounded font-bold ${
+                          c.tipo_entrada === 'RETARDATARIA'
+                            ? 'bg-purple-900 text-purple-200'
+                            : c.tipo_entrada === 'RETORNO'
+                            ? 'bg-amber-900 text-amber-200'
+                            : 'bg-slate-800 text-gray-400'
                         }`}
                       >
-                        {c.estado === 'NO_MAPA' ? 'Na Fila' : c.estado.replace(/_/g, ' ')}
+                        {c.tipo_entrada || 'REGULAR'}
                       </span>
-                      {c.excecao_mapa && (
-                        <span
-                          className="ml-1 text-[10px] px-1.5 py-0.5 bg-rose-100 text-rose-800 font-bold rounded"
-                          title={c.motivo_excecao || 'Exceção autorizada'}
-                        >
-                          Exceção
-                        </span>
-                      )}
                     </td>
-                    <td className="py-3.5 px-4">
-                      {c.resultado_final ? (
-                        <span
-                          className={`font-bold px-2 py-0.5 rounded text-xs ${
-                            c.resultado_final === 'VALEU'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : c.resultado_final === 'RETORNO'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {c.resultado_final}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-xs">-</span>
-                      )}
-                      {Number(c.tem_contestacao) > 0 && (
-                        <span className="ml-1.5 text-[10px] bg-slate-900 text-white px-1.5 py-0.5 rounded font-bold">
-                          Vídeo
-                        </span>
-                      )}
+                    <td className="py-4 px-4">
+                      <span
+                        className={`text-xs px-3 py-1 rounded-full font-black uppercase ${
+                          c.estado === 'CONCLUIDA'
+                            ? c.resultado_final === 'VALEU'
+                              ? 'bg-emerald-500 text-black'
+                              : 'bg-rose-600 text-white'
+                            : c.estado === 'EM_EXECUCAO'
+                            ? 'bg-amber-500 text-black animate-pulse'
+                            : c.estado === 'CHAMADA'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-800 text-gray-400'
+                        }`}
+                      >
+                        {c.estado === 'CONCLUIDA' ? c.resultado_final || 'CONCLUÍDA' : c.estado}
+                      </span>
                     </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {c.estado === 'NO_MAPA' && (
-                          <button
-                            onClick={() => executarAcao('CHAMAR', c.id)}
-                            className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-md transition"
-                          >
-                            Chamar
-                          </button>
-                        )}
-                        {c.estado === 'CHAMADA' && (
-                          <button
-                            onClick={() => executarAcao('INICIAR', c.id)}
-                            className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-md transition"
-                          >
-                            Iniciar
-                          </button>
-                        )}
-                        {!c.excecao_mapa && c.estado !== 'CONCLUIDA' && (
-                          <button
-                            onClick={() => setModalExcecao({ aberto: true, corrida: c, motivo: '' })}
-                            className="px-2 py-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xs rounded transition"
-                            title="Autorizar exceção"
-                          >
-                            Exceção
-                          </button>
-                        )}
-                      </div>
+                    {/* BOTÕES DE AÇÃO NA TABELA COM MÍNIMO 56PX */}
+                    <td className="py-4 px-4 text-right print:hidden">
+                      {c.estado === 'EM_ESPERA' && (
+                        <button
+                          onClick={() => {
+                            executarAcao('CHAMAR', c.id);
+                            iniciarCancela();
+                          }}
+                          className="min-h-[56px] px-5 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-xl shadow transition"
+                        >
+                          📢 CHAMAR PISTA
+                        </button>
+                      )}
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal de Exceção */}
-      {modalExcecao.aberto && modalExcecao.corrida && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-900">
-              Autorizar Exceção no Mapa
-            </h3>
-            <p className="text-xs text-slate-500">
-              Liberação excepcional da senha para corrida no mapa. A justificativa será registrada na auditoria.
+      {/* MODAL PARA GERAR BATERIAS */}
+      {modalGerarBaterias.aberto && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl text-white">
+            <h3 className="text-2xl font-black text-amber-400 mb-2 uppercase">⚙️ Gerar Baterias de Corrida</h3>
+            <p className="text-sm text-gray-400 mb-6">
+              Agrupe automaticamente as duplas da vaquejada em baterias sequenciais.
             </p>
-            <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-1 text-slate-700">
-              <div><strong>Senha:</strong> {modalExcecao.corrida.senha_codigo}</div>
-              <div><strong>Competidor:</strong> {modalExcecao.corrida.puxador_nome}</div>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Justificativa *
-              </label>
-              <textarea
-                value={modalExcecao.motivo}
-                onChange={(e) => setModalExcecao({ ...modalExcecao, motivo: e.target.value })}
-                placeholder="Informe o motivo da liberação..."
-                className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-slate-900"
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
+
+            <label className="text-xs font-bold text-gray-300 uppercase block mb-2">
+              Tamanho de cada Bateria (duplas por bateria):
+            </label>
+            <input
+              type="number"
+              min="5"
+              max="50"
+              value={modalGerarBaterias.tamanho}
+              onChange={(e) => setModalGerarBaterias({ ...modalGerarBaterias, tamanho: parseInt(e.target.value) || 15 })}
+              className="w-full min-h-[56px] px-4 bg-black border-2 border-slate-700 rounded-xl text-2xl font-mono font-bold text-amber-400 mb-6"
+            />
+
+            <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setModalExcecao({ aberto: false, corrida: null, motivo: '' })}
-                className="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
+                onClick={() => setModalGerarBaterias({ aberto: false, tamanho: 15 })}
+                className="min-h-[56px] px-5 bg-slate-800 text-gray-300 font-bold rounded-xl"
               >
                 Cancelar
               </button>
               <button
-                onClick={confirmarExcecao}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold shadow-xs"
+                onClick={handleGerarBaterias}
+                className="min-h-[56px] px-6 bg-amber-500 text-black font-black rounded-xl hover:bg-amber-600 transition"
               >
-                Confirmar
+                Gerar Agora
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST FLUTUANTE */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
+          <div
+            className={`px-6 py-4 rounded-2xl shadow-2xl font-black text-base flex items-center gap-3 border-2 ${
+              toast.tipo === 'sucesso'
+                ? 'bg-emerald-950 text-emerald-200 border-emerald-500'
+                : toast.tipo === 'erro'
+                ? 'bg-rose-950 text-rose-200 border-rose-500'
+                : 'bg-amber-950 text-amber-200 border-amber-500'
+            }`}
+          >
+            <span>{toast.tipo === 'sucesso' ? '✅' : toast.tipo === 'erro' ? '❌' : '⚠️'}</span>
+            <span>{toast.mensagem}</span>
           </div>
         </div>
       )}
