@@ -99,13 +99,35 @@ node scripts/create-admin.js "Nome do Administrador" "admin@vaquejada.com" "Senh
 
 ---
 
-## 🧪 Testes Automatizados
+## 📚 Documentação Operacional e Guias de Produção
 
-Para executar os testes de validação das regras de segurança e fluxos:
+Consulte os manuais detalhados disponíveis na pasta `/docs`:
+
+- **[Guia Oficial de Implantação e Produção (docs/producao.md)](file:///Users/briciocardoso/Downloads/Projetos/masterdealers/projects/vaquejada/docs/producao.md)**:
+  - Arquitetura de rede local (LAN), configuração de PM2 (`ecosystem.config.js`) e serviço Linux `systemd`.
+  - **Runbooks de Contingência Operacional**: Procedimentos passo a passo para queda de Wi-Fi, travamento de servidor, falta de energia no parque e recuperação de desastre.
+- **[Manuais Operacionais por Perfil (docs/manual-operacional-perfis.md)](file:///Users/briciocardoso/Downloads/Projetos/masterdealers/projects/vaquejada/docs/manual-operacional-perfis.md)**:
+  - Referência rápida de 1 página por função: **Secretaria (Caixa)**, **Operador de Pista**, **Juiz Oficial** e **Administrador**.
+- **[Rotinas de Backup e Restauração (docs/backup-e-restauracao.md)](file:///Users/briciocardoso/Downloads/Projetos/masterdealers/projects/vaquejada/docs/backup-e-restauracao.md)**:
+  - Scripts `backup.sh` e `restore.sh`, agendamento diário via cron e retenção automática de 7 dias.
+
+---
+
+## 🧪 Testes Automatizados e Ensaio Geral de Evento
+
+O sistema conta com suíte de testes de estresse, segurança e relatórios:
+
 ```bash
-# Teste de integridade de segurança, RBAC estrito e fluxo operacional
-node scripts/test-bloco-b.js
+# 1. Ensaio Geral de Evento (Simulação com 100 duplas, 4 caixas concorrentes, 5 baterias, pista e 20 telões)
+node scripts/ensaio-geral-evento.js
 
-# Varredura completa de rotas e comprovação de proteção contra acessos anônimos
+# 2. Varredura completa de rotas e comprovação de proteção RBAC (nenhuma rota desprotegida)
 node scripts/test-seguranca-rotas.js
+
+# 3. Teste de qualidade de relatórios (XLSX com ExcelJS, PDF com jsPDF e QR Code real)
+node scripts/test-parte2-qualidade-relatorios.js
+
+# 4. Teste de criptografia AES-256-GCM de CPF, Blind Index e rotina de backup
+node scripts/test-parte3-pendencias-antigas.js
 ```
+
